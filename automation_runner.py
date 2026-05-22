@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -107,6 +108,7 @@ def automation_settings(config: dict[str, Any]) -> dict[str, Any]:
         "trigger_events_path": path_from_root(str(raw.get("trigger_events_path", "data/trigger_events.jsonl"))),
         "trigger_state_path": path_from_root(str(raw.get("trigger_state_path", "data/trigger_state.json"))),
         "no_entry_lock_path": path_from_root(str(raw.get("no_entry_lock_path", "data/no_entry_lock.json"))),
+        "loop_lock_path": path_from_root(str(raw.get("loop_lock_path", "data/automation_loop.lock"))),
     }
 
 
@@ -116,78 +118,159 @@ def path_from_root(value: str) -> Path:
 
 
 def run_loop(settings: dict[str, Any], task_spec: str, duration_minutes: float = 0) -> None:
-    last_dashboard: datetime | None = None
-    last_levels: datetime | None = None
-    last_supervisor: datetime | None = None
-    last_rebound: datetime | None = None
-    last_chart: datetime | None = None
+    acquire_loop_lock(settings["loop_lock_path"])
+    last_dashboard_slot: datetime | None = None
+    last_levels_slot: datetime | None = None
+    last_supervisor_slot: datetime | None = None
+    last_rebound_slot: datetime | None = None
+    last_chart_slot: datetime | None = None
     last_plan_date = ""
     requested = parse_tasks(task_spec)
     poll_seconds = int(settings["loop_poll_seconds"])
     end_at = None
     if duration_minutes and duration_minutes > 0:
         end_at = datetime.now(settings["timezone"]) + timedelta(minutes=duration_minutes)
-    write_status(
-        settings,
-        {
-            "ok": True,
-            "mode": "loop",
-            "message": "automation loop started",
-            "session_until": end_at.isoformat(timespec="seconds") if end_at else "",
-        },
-    )
-
-    while True:
-        now = datetime.now(settings["timezone"])
-        if end_at and now >= end_at:
-            result = {
+    try:
+        write_status(
+            settings,
+            {
                 "ok": True,
                 "mode": "loop",
-                "timestamp": now.isoformat(timespec="seconds"),
-                "message": "automation loop completed",
-            }
-            write_status(settings, result)
-            append_jsonl(settings["log_path"], result)
+                "message": "automation loop started",
+                "session_until": end_at.isoformat(timespec="seconds") if end_at else "",
+            },
+        )
+
+        while True:
+            now = datetime.now(settings["timezone"])
+            if end_at and now >= end_at:
+                result = {
+                    "ok": True,
+                    "mode": "loop",
+                    "timestamp": now.isoformat(timespec="seconds"),
+                    "message": "automation loop completed",
+                }
+                write_status(settings, result)
+                append_jsonl(settings["log_path"], result)
+                return
+
+            tasks: list[str] = []
+            if "due" in requested or "dashboard" in requested:
+                slot = current_slot(now, int(settings["dashboard_refresh_minutes"]))
+                if slot != last_dashboard_slot:
+                    tasks.append("dashboard")
+                    last_dashboard_slot = slot
+            if "due" in requested or "levels" in requested:
+                interval = int(settings["support_resistance_refresh_minutes"])
+                slot = current_slot(now, interval)
+                if slot != last_levels_slot:
+                    tasks.append("levels")
+                    last_levels_slot = slot
+            if "due" in requested or "supervisor" in requested:
+                interval = int(settings["supervisor_refresh_minutes"])
+                slot = current_slot(now, interval)
+                if slot != last_supervisor_slot:
+                    tasks.append("supervisor")
+                    last_supervisor_slot = slot
+            if "due" in requested or "rebound" in requested:
+                interval = int(settings.get("bear_rebound_check_minutes", 5))
+                slot = current_slot(now, interval)
+                if slot != last_rebound_slot:
+                    tasks.append("rebound")
+                    last_rebound_slot = slot
+            if "due" in requested or "chart" in requested:
+                interval = int(settings.get("chart_trade_check_minutes", 5))
+                slot = current_slot(now, interval)
+                if slot != last_chart_slot:
+                    tasks.append("chart")
+                    last_chart_slot = slot
+            if ("due" in requested or "plan" in requested) and should_run_plan(now, settings, last_plan_date):
+                tasks.append("plan")
+                last_plan_date = now.strftime("%Y-%m-%d")
+
+            if tasks:
+                run_tasks(tasks + ["status"], settings)
+            sleep_seconds = max(poll_seconds, 5)
+            if end_at:
+                remaining = (end_at - datetime.now(settings["timezone"])).total_seconds()
+                if remaining <= 0:
+                    continue
+                sleep_seconds = min(sleep_seconds, remaining)
+            sleep(sleep_seconds)
+    finally:
+        release_loop_lock(settings["loop_lock_path"])
+
+
+def current_slot(now: datetime, interval_minutes: int) -> datetime:
+    """Return the current wall-clock slot for a polling interval."""
+    if interval_minutes <= 0:
+        return now.replace(second=0, microsecond=0)
+    minute = (now.minute // interval_minutes) * interval_minutes
+    return now.replace(minute=minute, second=0, microsecond=0)
+
+
+def next_slot(now: datetime, interval_minutes: int) -> datetime:
+    if interval_minutes <= 0:
+        return now.replace(second=0, microsecond=0)
+    slot_start = current_slot(now, interval_minutes)
+    if slot_start == now.replace(second=0, microsecond=0) and now.second == 0 and now.microsecond == 0:
+        return slot_start
+    return slot_start + timedelta(minutes=interval_minutes)
+
+
+def acquire_loop_lock(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"pid": os.getpid(), "created_at": datetime.now().isoformat(timespec="seconds")}
+    if path.exists():
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            existing = {}
+        existing_pid = int(existing.get("pid", 0) or 0)
+        if existing_pid and process_alive(existing_pid):
+            raise RuntimeError(f"automation loop already running with pid={existing_pid}")
+        try:
+            path.unlink()
+        except OSError:
+            pass
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def release_loop_lock(path: Path) -> None:
+    try:
+        if not path.exists():
             return
+        existing = json.loads(path.read_text(encoding="utf-8"))
+        if int(existing.get("pid", 0) or 0) == os.getpid():
+            path.unlink()
+    except (OSError, json.JSONDecodeError, ValueError):
+        return
 
-        tasks: list[str] = []
-        if "due" in requested or "dashboard" in requested:
-            if last_dashboard is None or now - last_dashboard >= timedelta(minutes=int(settings["dashboard_refresh_minutes"])):
-                tasks.append("dashboard")
-                last_dashboard = now
-        if "due" in requested or "levels" in requested:
-            interval = int(settings["support_resistance_refresh_minutes"])
-            if last_levels is None or now - last_levels >= timedelta(minutes=interval):
-                tasks.append("levels")
-                last_levels = now
-        if "due" in requested or "supervisor" in requested:
-            interval = int(settings["supervisor_refresh_minutes"])
-            if last_supervisor is None or now - last_supervisor >= timedelta(minutes=interval):
-                tasks.append("supervisor")
-                last_supervisor = now
-        if "due" in requested or "rebound" in requested:
-            interval = int(settings.get("bear_rebound_check_minutes", 5))
-            if last_rebound is None or now - last_rebound >= timedelta(minutes=interval):
-                tasks.append("rebound")
-                last_rebound = now
-        if "due" in requested or "chart" in requested:
-            interval = int(settings.get("chart_trade_check_minutes", 5))
-            if last_chart is None or now - last_chart >= timedelta(minutes=interval):
-                tasks.append("chart")
-                last_chart = now
-        if ("due" in requested or "plan" in requested) and should_run_plan(now, settings, last_plan_date):
-            tasks.append("plan")
-            last_plan_date = now.strftime("%Y-%m-%d")
 
-        if tasks:
-            run_tasks(tasks + ["status"], settings)
-        sleep_seconds = max(poll_seconds, 5)
-        if end_at:
-            remaining = (end_at - datetime.now(settings["timezone"])).total_seconds()
-            if remaining <= 0:
-                continue
-            sleep_seconds = min(sleep_seconds, remaining)
-        sleep(sleep_seconds)
+def process_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        try:
+            import ctypes
+
+            process_query_limited_information = 0x1000
+            handle = ctypes.windll.kernel32.OpenProcess(process_query_limited_information, False, pid)
+            if not handle:
+                return False
+            ctypes.windll.kernel32.CloseHandle(handle)
+            return True
+        except (AttributeError, OSError, ValueError):
+            return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
 
 
 def should_run_plan(now: datetime, settings: dict[str, Any], last_plan_date: str) -> bool:
@@ -658,8 +741,8 @@ def level_policy(settings: dict[str, Any]) -> dict[str, Any]:
 
 def next_schedule(settings: dict[str, Any]) -> dict[str, Any]:
     now = datetime.now(settings["timezone"])
-    dashboard = now + timedelta(minutes=int(settings["dashboard_refresh_minutes"]))
-    levels = now + timedelta(minutes=int(settings["support_resistance_refresh_minutes"]))
+    dashboard = next_slot(now, int(settings["dashboard_refresh_minutes"]))
+    levels = next_slot(now, int(settings["support_resistance_refresh_minutes"]))
     target_hour, target_minute = parse_hhmm(str(settings["paper_plan_time_kst"]))
     plan = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
     if plan <= now:
