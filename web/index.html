@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>RGCA-L Trading Dashboard</title>
+    <title>Coinsoup 모의투자</title>
     <link rel="stylesheet" href="/styles.css" />
     <script src="https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
   </head>
@@ -12,18 +12,18 @@
       <header class="topbar">
         <div class="brand">
           <div class="logo">R</div>
-          <h1>RGCA-L Trading Dashboard</h1>
-          <span class="dry-badge">TEST MODE</span>
+          <h1>Coinsoup 모의투자</h1>
+          <span class="dry-badge">모의투자</span>
         </div>
         <div class="top-right">
           <span class="timezone">Asia/Seoul</span>
           <span id="updatedAt" class="clock">--</span>
-          <span class="pill">API 상태 <strong class="ok">정상</strong></span>
+          <span class="pill">연결 상태 <strong class="ok">정상</strong></span>
           <span class="pill">데이터 상태 <strong class="ok">정상</strong></span>
           <button id="streamToggle" class="stream-pill on" type="button">
             실시간 <strong id="streamStatus">연결중</strong>
           </button>
-          <span id="usdtRate" class="pill fx-pill" title="업비트 KRW-USDT 시장 시세입니다. 김프 계산에 사용합니다.">USDT/KRW(업비트) --</span>
+          <span id="usdtRate" class="pill fx-pill" title="업비트 KRW-USDT 시장 시세입니다. 국내외 가격 차이를 계산할 때 씁니다.">USDT/KRW(업비트) --</span>
           <span id="usdRate" class="pill fx-pill muted-rate" title="ECB 기준 참고 환율입니다. 실시간 은행 고시환율이 아닐 수 있습니다.">USD/KRW(참고) --</span>
           <span id="fxBasis" class="pill fx-basis" title="업비트 USDT/KRW와 USD/KRW 참고값의 차이입니다.">차이 --</span>
           <button id="refreshBtn" class="gear-btn" title="새로고침">↻</button>
@@ -33,61 +33,61 @@
       <aside class="side">
         <nav class="nav">
           <a class="active" href="#dashboard">대시보드</a>
-          <a href="#regime">시장 국면</a>
-          <a href="#assets">자산 분석</a>
-          <a href="#levels">지지/저항선</a>
-          <a href="#decision">신호 & 판단 근거</a>
-          <a href="#risk">리스크 관리</a>
+          <a href="#regime">시장 흐름</a>
+          <a href="#assets">코인 보기</a>
+          <a href="#levels">가격 구간</a>
+          <a href="#decision">매수 판단</a>
+          <a href="#risk">안전장치</a>
           <a href="#performance">수익 현황</a>
-          <a href="#log">주문 로그</a>
-          <a href="#settings">설정</a>
+          <a href="#log">매매 기록</a>
+          <a href="#settings">설정 요약</a>
         </nav>
 
         <section class="mini-card" id="allocation">
-          <h3>포트폴리오 배분</h3>
+          <h3>목표 배분</h3>
             <div class="allocation">
               <div class="donut"></div>
               <div class="legend">
-              <div><span><i class="dot blue"></i>코어 현물</span><b>70%</b></div>
-              <div><span><i class="dot green"></i>공격 현물</span><b>18%</b></div>
-              <div><span><i class="dot slate"></i>Reserve</span><b>8%</b></div>
-              <div><span><i class="dot orange"></i>Futures 담보</span><b>4%</b></div>
+              <div><span><i class="dot blue"></i>기본 코인</span><b>70%</b></div>
+              <div><span><i class="dot green"></i>기회 코인</span><b>18%</b></div>
+              <div><span><i class="dot slate"></i>대기 현금</span><b>8%</b></div>
+              <div><span><i class="dot orange"></i>선물 대기금</span><b>4%</b></div>
             </div>
           </div>
         </section>
 
         <section class="mini-card" id="operation">
-          <h3>운용 단계</h3>
+          <h3>현재 상태</h3>
           <div class="small-list">
-            <div><span>프로필</span><b id="sideStrategyName">Neutral</b></div>
-            <div><span>현재 단계</span><b id="sideStage" class="caution">테스트</b></div>
-            <div><span>Futures</span><b id="sideFuturesPolicy">BTC/ETH 제한</b></div>
-            <div><span>자동 출금</span><b class="positive">OFF</b></div>
+            <div><span>운용 방식</span><b id="sideStrategyName">보통</b></div>
+            <div><span>상태</span><b id="sideStage" class="caution">모의투자</b></div>
+            <div><span>선물</span><b id="sideFuturesPolicy">보기 전용</b></div>
+            <div><span>출금 자동화</span><b class="positive">OFF</b></div>
           </div>
         </section>
 
         <section class="mini-card">
-          <h3>분리 운용</h3>
+          <h3>거래소 기준</h3>
           <div class="small-list">
             <div><span>Upbit-KRW</span><b id="bookUpbit">60%</b></div>
             <div><span>Binance-USDT</span><b id="bookBinance">40%</b></div>
-            <div><span>리밸런싱</span><b id="bookRebalance">격주</b></div>
-            <div><span>드리프트</span><b id="bookDrift">5%p</b></div>
+            <div><span>비중 맞추기</span><b id="bookRebalance">2주마다</b></div>
+            <div><span>허용 차이</span><b id="bookDrift">5%p</b></div>
           </div>
         </section>
 
         <section class="mini-card scalp-card">
-          <h3>Scalp Lab</h3>
+          <h3>초단기 테스트</h3>
           <div class="small-list">
             <div><span>상태</span><b id="scalpStatus" class="caution">잠금</b></div>
-            <div><span>수수료 조건</span><b id="scalpFeeGate">미확인</b></div>
+            <div><span>수수료 확인</span><b id="scalpFeeGate">미확인</b></div>
             <div><span>최대 보유</span><b id="scalpHold">20분</b></div>
-            <div><span>일일 손실 중지</span><b id="scalpDailyStop">0.5%</b></div>
+            <div><span>하루 손실 제한</span><b id="scalpDailyStop">0.5%</b></div>
           </div>
         </section>
 
         <section class="mini-card" id="regime">
-          <h3>시장 국면</h3>
+          <h3>시장 흐름</h3>
           <div class="regime-box">
             <div id="sideRegimeIcon" class="regime-icon">B</div>
             <div>
@@ -98,43 +98,43 @@
         </section>
 
         <section class="mini-card">
-          <h3>자동화 주기</h3>
+          <h3>자동 실행</h3>
           <div class="small-list">
-            <div><span>가격</span><b id="autoPriceStream">실시간 tick</b></div>
-            <div><span>차트 분석</span><b id="autoChartAnalysis">15분마다</b></div>
-            <div><span>지지/저항</span><b id="autoLevels">봉 마감 후</b></div>
-            <div><span>주요 4H</span><b id="autoMajorLevels">01:05...</b></div>
-            <div><span>일봉 확정</span><b id="autoDaily">09:10</b></div>
-            <div><span>주문 계획</span><b id="autoPlan">09:12</b></div>
+            <div><span>가격 갱신</span><b id="autoPriceStream">실시간</b></div>
+            <div><span>차트 점검</span><b id="autoChartAnalysis">15분마다</b></div>
+            <div><span>가격 구간</span><b id="autoLevels">봉 마감 후</b></div>
+            <div><span>4시간 기준</span><b id="autoMajorLevels">01:05...</b></div>
+            <div><span>하루 기준</span><b id="autoDaily">09:10</b></div>
+            <div><span>자동 주문</span><b id="autoPlan">09:12</b></div>
           </div>
         </section>
 
         <section class="mini-card">
-          <h3>리스크 한도</h3>
+          <h3>안전 한도</h3>
           <div class="small-list">
-            <div><span>일간 손실 한도</span><b id="riskDailyLimit">2.00%</b></div>
-            <div><span>7일 손실 한도</span><b id="riskWeeklyLimit">6.00%</b></div>
-            <div><span>공격 상한</span><b id="riskAttackCap">30%</b></div>
-            <div><span>실거래 잠금</span><b id="riskLiveLock" class="positive">ON</b></div>
+            <div><span>하루 손실 제한</span><b id="riskDailyLimit">2.00%</b></div>
+            <div><span>7일 손실 제한</span><b id="riskWeeklyLimit">6.00%</b></div>
+            <div><span>기회 코인 한도</span><b id="riskAttackCap">30%</b></div>
+            <div><span>실거래 차단</span><b id="riskLiveLock" class="positive">ON</b></div>
           </div>
         </section>
 
         <section class="mini-card">
-          <h3>거래소 상태</h3>
+          <h3>데이터 연결</h3>
           <div class="small-list" id="exchangeStatus">
-            <div><span>Upbit Spot</span><b class="positive">정상</b></div>
-            <div><span>Binance Spot</span><b class="positive">정상</b></div>
-            <div><span>Binance Futures</span><b class="muted-text">분석 전용</b></div>
+            <div><span>업비트 현물</span><b class="positive">정상</b></div>
+            <div><span>바이낸스 현물</span><b class="positive">정상</b></div>
+            <div><span>Binance 선물</span><b class="muted-text">보기 전용</b></div>
           </div>
         </section>
       </aside>
 
       <main class="main" id="dashboard">
         <section class="exchange-tabs">
-          <button class="tab active" data-venue="upbit_spot">Upbit Spot</button>
-          <button class="tab" data-venue="binance_spot">Binance Spot</button>
-          <button class="tab" data-venue="binance_futures">Binance Futures</button>
-          <span class="risk-state">위험 상태 <b>Normal</b></span>
+          <button class="tab active" data-venue="upbit_spot">업비트 현물</button>
+          <button class="tab" data-venue="binance_spot">바이낸스 현물</button>
+          <button class="tab" data-venue="binance_futures">바이낸스 선물</button>
+          <span class="risk-state">위험 상태 <b>보통</b></span>
         </section>
 
         <section class="portfolio-overview" id="portfolioOverview">
@@ -190,7 +190,7 @@
               <div class="panel-head">
                 <div>
                   <h2 id="chartTitle">KRW-BTC</h2>
-                  <p id="chartSubtitle">4시간 · Upbit Spot</p>
+                  <p id="chartSubtitle">4시간 · 업비트 현물</p>
                 </div>
                 <div class="chart-toolbar">
                   <button class="tool-btn scalp-only" data-timeframe="1m">1분</button>
@@ -204,7 +204,7 @@
                   <button class="tool-btn" data-timeframe="1d">일봉</button>
                   <button class="tool-btn" data-timeframe="1w">주봉</button>
                   <button class="tool-btn" data-timeframe="1M">월봉</button>
-                  <button id="scalpToggle" class="tool-btn scalp-toggle" type="button">Scalp Lab OFF</button>
+                  <button id="scalpToggle" class="tool-btn scalp-toggle" type="button">초단기 OFF</button>
                   <button id="indicatorToggle" class="tool-btn" type="button">보조선 보기</button>
                 </div>
               </div>
@@ -217,13 +217,13 @@
               <div class="mtf-panel">
                 <div class="mtf-head">
                   <div>
-                    <h3>Binance MTF 단타 보드</h3>
-                    <p id="mtfSubtitle">1·3·5·15분 동시 확인</p>
+                    <h3>짧은 시간 흐름</h3>
+                    <p id="mtfSubtitle">1·3·5·15분을 같이 봅니다</p>
                   </div>
                   <span id="mtfScore" class="mtf-score">--</span>
                 </div>
                 <div id="mtfGrid" class="mtf-grid"></div>
-                <p class="mtf-note">자동 매수 신호가 아니라 단타 환경 확인용입니다. 수수료와 슬리피지 확인 전 실거래는 잠금입니다.</p>
+                <p class="mtf-note">짧은 흐름 참고용입니다. 실제 주문은 잠겨 있습니다.</p>
               </div>
             </article>
 
@@ -231,16 +231,16 @@
               <div class="panel-head">
                 <div>
                   <h2>매수/매도 기록</h2>
-                  <p>TEST MODE 가상 체결과 스킵 사유</p>
+                  <p>모의 매수·매도와 제외된 이유</p>
                 </div>
                 <div class="log-actions">
                   <div class="segmented">
                     <button class="active" type="button" data-trade-filter="all">전체</button>
                     <button type="button" data-trade-filter="buy">매수</button>
                     <button type="button" data-trade-filter="sell">매도</button>
-                    <button type="button" data-trade-filter="skipped">스킵</button>
+                    <button type="button" data-trade-filter="skipped">제외</button>
                   </div>
-                  <button id="runPlanBtn" class="secondary-btn">일일 계획 실행</button>
+                  <button id="runPlanBtn" class="secondary-btn">오늘 계획 실행</button>
                 </div>
               </div>
               <div id="tradeSummary" class="trade-summary"></div>
@@ -268,14 +268,14 @@
           <aside class="panel decision" id="decision">
             <div class="panel-head">
               <div>
-                <h2>판단 근거 요약</h2>
+                <h2>매수 판단</h2>
                 <p id="decisionMarket">선택 종목 --</p>
               </div>
               <button id="decisionRefresh" class="small-icon">↻</button>
             </div>
 
             <section class="decision-section" id="risk">
-              <h3>1. 최종 판단</h3>
+              <h3>1. 결론</h3>
               <div class="final-box">
                 <span id="decisionSignal" class="final-decision">--</span>
                 <p id="decisionSummary">데이터를 불러오는 중입니다.</p>
@@ -291,45 +291,45 @@
               <h3>3. 가격 구간</h3>
               <div class="risk-grid">
                 <span>현재가</span><strong id="planCurrent">--</strong>
-                <span>김프</span><strong id="planKimchi">--</strong>
+                <span>국내 차이</span><strong id="planKimchi">--</strong>
                 <span>지지선</span><strong id="planSupport">--</strong>
                 <span>저항선</span><strong id="planResistance">--</strong>
-                <span>손절가</span><strong class="negative" id="planStop">--</strong>
-                <span>익절 후보</span><strong id="planTp">--</strong>
+                <span>손실 제한가</span><strong class="negative" id="planStop">--</strong>
+                <span>수익 목표</span><strong id="planTp">--</strong>
               </div>
             </section>
 
             <section class="decision-section">
               <h3>4. 참고 수치</h3>
               <div class="risk-grid">
-                <span>RSI</span><strong id="riskRsi">--</strong>
-                <span>ATR%</span><strong id="riskAtr">--</strong>
-                <span>거래량</span><strong id="riskVolume">--</strong>
-                <span>BTC 상대강도</span><strong id="riskRs">--</strong>
-                <span>Futures 정책</span><strong id="riskFutures">BTC/ETH만</strong>
+                <span>과열도</span><strong id="riskRsi">--</strong>
+                <span>흔들림</span><strong id="riskAtr">--</strong>
+                <span>거래 힘</span><strong id="riskVolume">--</strong>
+                <span>BTC 대비</span><strong id="riskRs">--</strong>
+                <span>선물</span><strong id="riskFutures">보기 전용</strong>
                 <span>실거래</span><strong class="positive">잠금</strong>
               </div>
             </section>
 
             <section class="decision-section">
-              <h3>5. 주문</h3>
+              <h3>5. 수동 테스트 주문</h3>
               <form id="paperOrderForm" class="order-form">
                 <label>
-                  주문 금액
+                  가상 주문 금액
                   <input id="orderAmount" type="number" min="0" step="1000" value="5000" />
                 </label>
                 <div class="button-row">
                   <button type="submit" data-side="buy" class="buy-btn">매수</button>
                   <button type="submit" data-side="sell" class="sell-btn">25% 매도</button>
                 </div>
-                <p id="orderNote">TEST MODE: 주문 라우터가 잠겨 있어 거래소로 전송되지 않습니다.</p>
+                <p id="orderNote">모의투자입니다. 실제 거래소로 주문이 나가지 않습니다.</p>
               </form>
             </section>
 
             <section class="decision-section">
-              <h3>6. 초단타 준비</h3>
+              <h3>6. 초단기 테스트 준비</h3>
               <div id="scalpChecklist" class="check-list"></div>
-              <p id="scalpNote">수수료 무료 확인 전에는 스캘프 자동 주문을 잠급니다.</p>
+              <p id="scalpNote">수수료 확인 전에는 초단기 자동 주문을 막아둡니다.</p>
             </section>
           </aside>
         </section>
