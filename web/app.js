@@ -1025,7 +1025,6 @@ function renderTrades(trades) {
   const allTrades = trades || [];
   const filtered = allTrades.filter((trade) => {
     if (state.tradeFilter === "all") return trade.status === "simulated";
-    if (state.tradeFilter === "skipped") return trade.status === "skipped";
     return trade.status === "simulated" && trade.side === state.tradeFilter;
   });
   renderTradeSummary(allTrades, summaryRoot);
@@ -1078,7 +1077,6 @@ function renderTradeSummary(trades, root) {
   const simulated = trades.filter((trade) => trade.status === "simulated");
   const buys = simulated.filter((trade) => trade.side === "buy");
   const sells = simulated.filter((trade) => trade.side === "sell");
-  const skipped = trades.filter((trade) => trade.status === "skipped");
   const buyTotal = buys.reduce((sum, trade) => sum + Number(trade.executed_quote_value || 0), 0);
   const sellTotal = sells.reduce((sum, trade) => sum + Number(trade.executed_quote_value || 0), 0);
   const realized = sells.reduce((sum, trade) => sum + Number(trade.realized_pnl || 0), 0);
@@ -1099,9 +1097,9 @@ function renderTradeSummary(trades, root) {
       <b>${sells.length ? "실현손익" : "매도 없음"}</b>
     </div>
     <div class="trade-summary-card muted-card">
-      <span>주문 안함</span>
-      <strong>${skipped.length}건</strong>
-      <b>제외 탭에서 확인</b>
+      <span>최근 체결</span>
+      <strong>${simulated.length}건</strong>
+      <b>가상 주문만 표시</b>
     </div>
   `;
 }
@@ -2156,7 +2154,7 @@ function translateNote(note = "") {
   if (note.includes("paper buy")) return "가상 매수";
   if (note.includes("paper sell")) return "가상 매도";
   if (note.includes("no real order")) return "실주문 없음";
-  if (note.includes("already simulated")) return "중복 제외";
+  if (note.includes("already simulated")) return "중복으로 실행 안함";
   if (note.includes("below minimum")) return "최소금액 미만";
   if (note.includes("insufficient virtual cash")) return "현금 부족";
   if (note.includes("insufficient virtual position")) return "보유 부족";
