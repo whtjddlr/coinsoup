@@ -2015,7 +2015,7 @@ def portfolio_payload(
     return {
         "cash": state.get("portfolio", {}).get("cash", {}),
         "positions": positions,
-        "equity": equity_rows,
+        "equity": primary_equity_first(equity_rows),
         "summary": {
             "cost_basis": total_cost_basis,
             "position_value": total_position_value,
@@ -2024,6 +2024,16 @@ def portfolio_payload(
             "trade_pnl": total_unrealized_pnl + total_realized_pnl,
         },
     }
+
+
+def primary_equity_first(rows: list[dict[str, str]]) -> list[dict[str, str]]:
+    return sorted(
+        rows,
+        key=lambda row: (
+            0 if safe_float(row.get("total_equity")) > 0 else 1,
+            0 if row.get("exchange") == "binance_futures" else 1,
+        ),
+    )
 
 
 def performance_payload(

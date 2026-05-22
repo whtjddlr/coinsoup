@@ -1662,9 +1662,14 @@ function handleBinanceTicker(ticker) {
   const asset = state.dashboard.assets.find((item) => item.asset === mapping.asset);
   if (!asset) return;
   asset.binance_price = price;
+  asset.futures_price = price;
   recalcKimchi(asset);
   state.stream.lastTickAt = Number(ticker.E || Date.now());
-  if (state.selected.exchange === "binance" && state.selected.instrument === symbol) {
+  updatePositionPrice("binance_futures", symbol, price);
+  if (
+    (state.selected.exchange === "binance" || state.selected.exchange === "binance_futures")
+    && state.selected.instrument === symbol
+  ) {
     updateRealtimeCandle(symbol, price, state.stream.lastTickAt);
   }
   scheduleRealtimeRender();
@@ -1720,8 +1725,18 @@ function updatePositionPrice(exchange, instrument, price) {
     const quantity = Number(position.quantity || 0);
     const costBasis = Number(position.cost_basis || quantity * Number(position.average_price || 0));
     position.current_price = price;
-    position.value = quantity * price;
-    position.unrealized_pnl = position.value - costBasis;
+    if (position.exchange === "binance_futures") {
+      const entry = Number(position.average_price || 0);
+      const margin = Number(position.margin || position.cost_basis || 0);
+      const side = String(position.side || "LONG").toUpperCase();
+      const pnl = side === "SHORT" ? (entry - price) * quantity : (price - entry) * quantity;
+      position.unrealized_pnl = pnl;
+      position.value = margin + pnl;
+      position.notional = quantity * price;
+    } else {
+      position.value = quantity * price;
+      position.unrealized_pnl = position.value - costBasis;
+    }
   });
   recalcRealtimeEquity();
 }
@@ -1729,8 +1744,20 @@ function updatePositionPrice(exchange, instrument, price) {
 function recalcRealtimeEquity() {
   const portfolio = state.dashboard?.portfolio;
   if (!portfolio || !portfolio.equity?.length) return;
-  const row = portfolio.equity[0];
-  const cash = Number(row.cash || 0);
+  portfolio.equity.forEach((row) => {
+    const cash = Number(row.cash || 0);
+    const positions = (portfolio.positions || []).filter((position) => position.exchange === row.exchange);
+    const positionValue = positions.reduce((sum, position) => sum + Number(position.value || 0), 0);
+    const costBasis = positions.reduce((sum, position) => {
+      const quantity = Number(position.quantity || 0);
+      const average = Number(position.average_price || 0);
+      return sum + Number(position.cost_basis || quantity * average || 0);
+    }, 0);
+    row.position_value = positionValue;
+    row.total_equity = cash + positionValue;
+    row.unrealized_pnl = positionValue - costBasis;
+  });
+  const activeRow = primaryEquityRow(portfolio);
   const positionValue = (portfolio.positions || []).reduce((sum, position) => sum + Number(position.value || 0), 0);
   const costBasis = (portfolio.positions || []).reduce((sum, position) => {
     const quantity = Number(position.quantity || 0);
@@ -1738,21 +1765,18 @@ function recalcRealtimeEquity() {
     return sum + Number(position.cost_basis || quantity * average || 0);
   }, 0);
   const realizedPnl = portfolioRealizedPnl(portfolio);
-  row.position_value = positionValue;
-  row.total_equity = cash + positionValue;
-  row.unrealized_pnl = positionValue - costBasis;
   portfolio.summary = {
     ...(portfolio.summary || {}),
     cost_basis: costBasis,
     position_value: positionValue,
-    unrealized_pnl: row.unrealized_pnl,
+    unrealized_pnl: positionValue - costBasis,
     realized_pnl: realizedPnl,
-    trade_pnl: row.unrealized_pnl + realizedPnl,
+    trade_pnl: positionValue - costBasis + realizedPnl,
   };
   const total = state.dashboard?.performance?.total;
-  if (total && Number.isFinite(Number(total.starting_equity_krw))) {
-    total.current_equity_krw = row.total_equity;
-    total.pnl_krw = row.total_equity - Number(total.starting_equity_krw);
+  if (total && activeRow.quote_currency === "KRW" && Number.isFinite(Number(total.starting_equity_krw))) {
+    total.current_equity_krw = activeRow.total_equity;
+    total.pnl_krw = activeRow.total_equity - Number(total.starting_equity_krw);
     total.return_pct = Number(total.starting_equity_krw) > 0
       ? (total.pnl_krw / Number(total.starting_equity_krw)) * 100
       : 0;
