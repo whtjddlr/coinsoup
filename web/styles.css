@@ -1240,6 +1240,49 @@ h1 {
   color: var(--muted);
 }
 
+.line-gap-grid {
+  display: flex;
+  flex: 1 0 100%;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.line-gap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  color: var(--muted);
+  background: rgba(15, 23, 42, 0.72);
+  white-space: nowrap;
+}
+
+.line-gap b {
+  color: #dbeafe;
+  font-weight: 800;
+}
+
+.line-gap.positive {
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.28);
+  background: rgba(20, 83, 45, 0.18);
+}
+
+.line-gap.negative {
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.3);
+  background: rgba(127, 29, 29, 0.16);
+}
+
+.line-gap.neutral {
+  color: #bae6fd;
+  border-color: rgba(14, 165, 233, 0.25);
+}
+
 .mtf-panel {
   border-top: 1px solid var(--border-soft);
   padding: 11px 13px 13px;

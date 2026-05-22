@@ -520,6 +520,8 @@ def futures_paper_payload(config: dict[str, Any], state: dict[str, Any]) -> dict
         "leverage": int(raw.get("leverage", 3)),
         "max_leverage": int(raw.get("max_leverage", 5)),
         "max_positions": int(raw.get("max_positions", 2)),
+        "take_profit_underlying_pct": float(raw.get("take_profit_underlying_pct", 1.6)),
+        "stop_loss_underlying_pct": float(raw.get("stop_loss_underlying_pct", 1.2)),
         "open_positions": positions,
         "mode": "paper_only",
     }

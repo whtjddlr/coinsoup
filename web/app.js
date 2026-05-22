@@ -1312,19 +1312,22 @@ function renderChart(payload) {
       state.lineSeries.push(series);
     });
   }
+  const asset = selectedAsset();
+  const position = positionForAsset(asset, payload);
+  const tradeLines = displayTradeLinesForChart(payload, position);
   addMagnetLines(payload);
   addExtraLevelLines(payload);
-  addPriceLine(payload.lines.support, "#22c55e", "지지선", { lineWidth: 2 });
-  addPriceLine(payload.lines.resistance, "#ef4444", "저항선", { lineWidth: 2 });
-  addPriceLine(payload.lines.stop_loss, "#ef4444", "손실 제한");
-  payload.lines.take_profit
+  addPriceLine(payload.lines.support, "#22c55e", "지지", { lineWidth: 2 });
+  addPriceLine(payload.lines.resistance, "#ef4444", "저항", { lineWidth: 2 });
+  addPriceLine(tradeLines.stopLoss, "#ef4444", "손절");
+  tradeLines.targets
     .slice(0, state.showIndicators ? 2 : 1)
-    .forEach((price, index) => addPriceLine(price, "#86efac", `수익 목표${index + 1}`));
-  const averagePrice = averagePriceForChart(selectedAsset(), payload);
-  addPriceLine(averagePrice, "#facc15", "평단가", { lineWidth: 2, lineStyle: 1 });
+    .forEach((price, index) => addPriceLine(price, "#86efac", `목표${index + 1}`));
+  const averagePrice = averagePriceForChart(asset, payload, position);
+  addPriceLine(averagePrice, "#facc15", "평단", { lineWidth: 2, lineStyle: 1 });
   state.chart.timeScale().fitContent();
   document.getElementById("priceTag").textContent = formatPrice(payload.indicators.close);
-  renderLineLegend(payload);
+  renderLineLegend(payload, { position, tradeLines, averagePrice });
   if (payload.exchange === state.selected.exchange && payload.instrument === state.selected.instrument) {
     renderDecision(selectedAsset(), payload);
   }
@@ -1464,21 +1467,69 @@ function samePrice(a, b) {
   return Math.abs(first - second) / second < 0.0002;
 }
 
-function averagePriceForChart(asset, payload) {
+function averagePriceForChart(asset, payload, position = null) {
   if (!asset || !payload) return 0;
-  const position = positionForAsset(asset);
-  const quantity = Number(position?.quantity || asset.position?.quantity || 0);
-  const average = Number(position?.average_price || asset.position?.average_price || 0);
+  const activePosition = position || positionForAsset(asset, payload);
+  const quantity = Number(activePosition?.quantity || asset.position?.quantity || 0);
+  const average = Number(activePosition?.average_price || asset.position?.average_price || 0);
   if (quantity <= 0 || average <= 0) return 0;
-  if (payload.exchange === "upbit") return average;
+  const sourceExchange = activePosition?.exchange || asset.exchange || "upbit";
+  if (payload.exchange === sourceExchange) return average;
   const usdtKrw = Number(asset.usdt_krw || state.dashboard?.usdt_krw || 0);
-  return usdtKrw > 0 ? average / usdtKrw : 0;
+  if (payload.exchange === "upbit" && sourceExchange !== "upbit") {
+    return usdtKrw > 0 ? average * usdtKrw : 0;
+  }
+  if (payload.exchange !== "upbit" && sourceExchange === "upbit") {
+    return usdtKrw > 0 ? average / usdtKrw : 0;
+  }
+  return average;
 }
 
-function positionForAsset(asset) {
-  return (state.dashboard?.portfolio?.positions || []).find((position) => (
-    position.exchange === "upbit" && position.instrument === asset.upbit
-  ));
+function positionForAsset(asset, payload = null) {
+  if (!asset) return null;
+  const positions = state.dashboard?.portfolio?.positions || [];
+  const exchange = payload?.exchange || state.selected.exchange;
+  const instrument = payload?.instrument || state.selected.instrument;
+  const exact = positions.find((position) => position.exchange === exchange && position.instrument === instrument);
+  if (exact) return exact;
+  const instruments = exchange === "upbit"
+    ? [["upbit", asset.upbit]]
+    : [
+      [exchange, asset.binance],
+      [exchange === "binance_futures" ? "binance" : "binance_futures", asset.binance],
+    ];
+  for (const [candidateExchange, candidateInstrument] of instruments) {
+    const match = positions.find((position) => (
+      position.exchange === candidateExchange && position.instrument === candidateInstrument
+    ));
+    if (match) return match;
+  }
+  return null;
+}
+
+function displayTradeLinesForChart(payload, position) {
+  const fallback = {
+    stopLoss: Number(payload.lines?.stop_loss || 0),
+    targets: payload.lines?.take_profit || [],
+    source: "chart",
+  };
+  if (!position || position.exchange !== "binance_futures") return fallback;
+  const average = Number(position.average_price || 0);
+  if (average <= 0) return fallback;
+  const settings = state.dashboard?.futures_paper || {};
+  const takeProfitPct = Number(settings.take_profit_underlying_pct ?? 1.6);
+  const stopLossPct = Number(settings.stop_loss_underlying_pct ?? 1.2);
+  const side = String(position.side || "LONG").toUpperCase();
+  const direction = side === "SHORT" ? -1 : 1;
+  const target = average * (1 + direction * takeProfitPct / 100);
+  const stopLoss = average * (1 - direction * stopLossPct / 100);
+  return {
+    stopLoss,
+    targets: [target],
+    source: "position",
+    takeProfitPct,
+    stopLossPct,
+  };
 }
 
 function addPriceLine(price, color, title, options = {}) {
@@ -1487,7 +1538,7 @@ function addPriceLine(price, color, title, options = {}) {
     price,
     color,
     lineWidth: options.lineWidth || 1,
-    lineStyle: options.lineStyle ?? (title === "지지선" || title === "저항선" ? 0 : 2),
+    lineStyle: options.lineStyle ?? (["지지", "저항", "지지선", "저항선"].includes(title) ? 0 : 2),
     axisLabelVisible: options.axisLabelVisible ?? true,
     title,
   });
@@ -1716,6 +1767,7 @@ function updateRealtimeCandle(instrument, price, eventTime) {
   state.chartPayload.indicators.close = price;
   state.candleSeries.update(next);
   document.getElementById("priceTag").textContent = formatPrice(price);
+  renderLineLegend(state.chartPayload);
 }
 
 function updatePositionPrice(exchange, instrument, price) {
@@ -1832,10 +1884,26 @@ function updateStreamStatus(forcedLabel = "") {
   label.textContent = "연결중";
 }
 
-function renderLineLegend(payload) {
-  const takeProfit = payload.lines.take_profit || [];
-  const averagePrice = averagePriceForChart(selectedAsset(), payload);
+function renderLineLegend(payload, context = {}) {
+  const asset = selectedAsset();
+  const position = context.position || positionForAsset(asset, payload);
+  const tradeLines = context.tradeLines || displayTradeLinesForChart(payload, position);
+  const takeProfit = tradeLines.targets || payload.lines.take_profit || [];
+  const averagePrice = context.averagePrice ?? averagePriceForChart(asset, payload, position);
   const magnetPct = Number(payload.levels?.magnet_zone_pct || 0);
+  const support = Number(payload.levels.support || payload.lines.support || 0);
+  const resistance = Number(payload.levels.resistance || payload.lines.resistance || 0);
+  const stopLoss = Number(tradeLines.stopLoss || payload.lines.stop_loss || 0);
+  const current = Number(payload.indicators.close || 0);
+  const gapItems = lineGapItems({
+    current,
+    averagePrice,
+    support,
+    resistance,
+    stopLoss,
+    target: Number(takeProfit[0] || 0),
+    position,
+  });
   const indicatorLegend = state.showIndicators
     ? `
       <span class="legend-chip ema20" title="20봉 지수이동평균선">EMA20</span>
@@ -1844,18 +1912,72 @@ function renderLineLegend(payload) {
     `
     : "";
   document.getElementById("lineLegend").innerHTML = `
-    <span class="legend-chip support" title="가격 아래의 주요 지지 구간">지지선 ${formatPrice(payload.levels.support)} (${Number(payload.levels.support_distance_pct).toFixed(2)}%)</span>
+    <span class="legend-chip support" title="가격 아래의 주요 지지 구간">지지 ${formatPrice(support)} (${Number(payload.levels.support_distance_pct).toFixed(2)}%)</span>
     <span class="legend-chip magnet" title="지지/저항 주변에서 가격이 머뭇거리기 쉬운 구간">자석 ${formatPctPlain(magnetPct)}%</span>
-    <span class="legend-chip resistance" title="가격 위의 주요 저항 구간">저항선 ${formatPrice(payload.levels.resistance)} (${Number(payload.levels.resistance_distance_pct).toFixed(2)}%)</span>
-    <span class="legend-chip stop" title="손실이 커지기 전에 정리하는 기준가">손실 제한 ${formatPrice(payload.lines.stop_loss)}</span>
+    <span class="legend-chip resistance" title="가격 위의 주요 저항 구간">저항 ${formatPrice(resistance)} (${Number(payload.levels.resistance_distance_pct).toFixed(2)}%)</span>
+    <span class="legend-chip stop" title="손실이 커지기 전에 정리하는 기준가">손절 ${formatPrice(stopLoss)}</span>
     <span class="legend-chip target" title="일부 수익을 챙길 수 있는 목표가">목표1 ${formatPrice(takeProfit[0])}</span>
     ${state.showIndicators && takeProfit[1] ? `<span class="legend-chip target" title="두 번째 수익 목표가">목표2 ${formatPrice(takeProfit[1])}</span>` : ""}
-    ${averagePrice ? `<span class="legend-chip average" title="현재 모의 보유 평균 매수가">평단 ${formatPrice(averagePrice)}</span>` : ""}
+    ${averagePrice ? `<span class="legend-chip average" title="현재 모의 보유 평균 진입가">평단 ${formatPrice(averagePrice)}</span>` : ""}
     ${indicatorLegend}
     <span class="legend-chip muted-chip">과열도 ${Number(payload.indicators.rsi).toFixed(1)}</span>
     <span class="legend-chip muted-chip">흔들림 ${Number(payload.indicators.atr_pct).toFixed(2)}%</span>
     <span class="legend-chip muted-chip">거래 힘 ${Number(payload.indicators.volume_ratio).toFixed(2)}x</span>
+    ${gapItems.length ? `<div class="line-gap-grid">${gapItems.map((item) => `
+      <span class="line-gap ${item.tone}"><b>${item.label}</b>${item.value}</span>
+    `).join("")}</div>` : ""}
   `;
+}
+
+function lineGapItems({ current, averagePrice, support, resistance, stopLoss, target, position }) {
+  const items = [];
+  if (position && averagePrice > 0 && current > 0) {
+    const move = sideAwareMovePct(position, averagePrice, current);
+    items.push({ label: `${positionSideLabel(position)} 손익폭`, value: formatPct(move), tone: pctToneClass(move) });
+  } else if (averagePrice > 0 && current > 0) {
+    const move = rawMovePct(averagePrice, current);
+    items.push({ label: "현재↔평단", value: formatPct(move), tone: pctToneClass(move) });
+  }
+  if (position && averagePrice > 0 && target > 0) {
+    const move = sideAwareMovePct(position, averagePrice, target);
+    items.push({ label: "평단→목표", value: formatPct(move), tone: pctToneClass(move) });
+  } else if (averagePrice > 0 && target > 0) {
+    const move = rawMovePct(averagePrice, target);
+    items.push({ label: "평단→목표", value: formatPct(move), tone: pctToneClass(move) });
+  }
+  if (position && averagePrice > 0 && stopLoss > 0) {
+    const move = sideAwareMovePct(position, averagePrice, stopLoss);
+    items.push({ label: "평단→손절", value: formatPct(move), tone: pctToneClass(move) });
+  } else if (averagePrice > 0 && stopLoss > 0) {
+    const move = rawMovePct(averagePrice, stopLoss);
+    items.push({ label: "평단→손절", value: formatPct(move), tone: pctToneClass(move) });
+  }
+  if (support > 0 && resistance > 0) {
+    items.push({ label: "지지↔저항", value: `${formatPctPlain(Math.abs(rawMovePct(support, resistance)))}%`, tone: "neutral" });
+  }
+  if (current > 0 && support > 0) {
+    items.push({ label: "현재→지지", value: formatPct(rawMovePct(current, support)), tone: pctToneClass(rawMovePct(current, support)) });
+  }
+  if (current > 0 && resistance > 0) {
+    items.push({ label: "현재→저항", value: formatPct(rawMovePct(current, resistance)), tone: pctToneClass(rawMovePct(current, resistance)) });
+  }
+  return items.slice(0, 6);
+}
+
+function rawMovePct(from, to) {
+  const start = Number(from || 0);
+  const end = Number(to || 0);
+  if (start <= 0 || end <= 0) return 0;
+  return ((end / start) - 1) * 100;
+}
+
+function sideAwareMovePct(position, entry, price) {
+  const move = rawMovePct(entry, price);
+  return String(position?.side || "LONG").toUpperCase() === "SHORT" ? -move : move;
+}
+
+function positionSideLabel(position) {
+  return String(position?.side || "LONG").toUpperCase() === "SHORT" ? "숏" : "롱";
 }
 
 function setupChartMeasurement(container) {
