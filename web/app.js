@@ -8,7 +8,7 @@ const state = {
   lineSeries: [],
   priceLines: [],
   chartPayload: null,
-  showIndicators: false,
+  showIndicators: true,
   maSpreadPair: "ema20:ema50",
   scalpMode: false,
   measure: { start: null, end: null },
@@ -572,6 +572,7 @@ function renderDecision(asset, chartPayload = null) {
   `;
   document.getElementById("planSupport").textContent = `${formatPrice(venueLevels.support)} (${formatPctPlain(venueLevels.supportDistance)}%)`;
   document.getElementById("planResistance").textContent = `${formatPrice(venueLevels.resistance)} (${formatPctPlain(venueLevels.resistanceDistance)}%)`;
+  document.getElementById("planLevelRange").textContent = levelRangeText(venueLevels.support, venueLevels.resistance);
   document.getElementById("planStop").textContent = formatPrice(venueLevels.stopLoss);
   document.getElementById("planTp").textContent = (venueLevels.takeProfit || []).map(formatPrice).join(" / ");
   document.getElementById("riskRsi").textContent = asset.rsi;
@@ -693,6 +694,16 @@ function renderPaperLeverageTest(levels) {
   setText("riskLevStop", `${formatLeverage(leverage)} ${formatPct(stopPct * leverage)} · ${formatLeverage(compare)} ${formatPct(stopPct * compare)}`);
   setTone("riskLevTarget", targetPct >= 0 ? "positive" : "negative");
   setTone("riskLevStop", stopPct >= 0 ? "positive" : "negative");
+}
+
+function levelRangeText(support, resistance) {
+  const low = Number(support || 0);
+  const high = Number(resistance || 0);
+  if (low <= 0 || high <= 0) return "--";
+  const lower = Math.min(low, high);
+  const upper = Math.max(low, high);
+  const pct = Math.abs(rawMovePct(lower, upper));
+  return `${formatPctPlain(pct)}% · ${formatPrice(upper - lower)}`;
 }
 
 function updateIndicatorToggle() {
@@ -1494,6 +1505,9 @@ function renderChart(payload) {
       state.chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
       renderMeasurement();
     });
+    const redrawMeasurement = () => window.requestAnimationFrame(renderMeasurement);
+    state.chart.timeScale().subscribeVisibleTimeRangeChange?.(redrawMeasurement);
+    state.chart.timeScale().subscribeVisibleLogicalRangeChange?.(redrawMeasurement);
     setupChartMeasurement(container);
   }
   state.lineSeries.forEach((series) => state.chart.removeSeries(series));
@@ -2235,7 +2249,7 @@ function lineGapItems({ current, averagePrice, support, resistance, stopLoss, ta
     items.push({ label: "평단→손절", value: formatPct(move), tone: pctToneClass(move) });
   }
   if (support > 0 && resistance > 0) {
-    items.push({ label: "지지↔저항", value: `${formatPctPlain(Math.abs(rawMovePct(support, resistance)))}%`, tone: "neutral" });
+    items.push({ label: "지지~저항 높이", value: levelRangeText(support, resistance), tone: "neutral" });
   }
   if (current > 0 && support > 0) {
     items.push({ label: "현재→지지", value: formatPct(rawMovePct(current, support)), tone: pctToneClass(rawMovePct(current, support)) });
@@ -2328,6 +2342,7 @@ function snapPointToCandle(rawX, rawY, rawPrice, rawTime) {
     { label: "고가", price: Number(nearest.candle.high) },
     { label: "저가", price: Number(nearest.candle.low) },
     { label: "종가", price: Number(nearest.candle.close) },
+    ...chartLineSnapCandidates(nearest.index),
   ].filter((item) => Number.isFinite(item.price) && item.price > 0);
 
   let selected = candidates[0];
@@ -2354,6 +2369,30 @@ function snapPointToCandle(rawX, rawY, rawPrice, rawTime) {
   };
 }
 
+function chartLineSnapCandidates(index) {
+  const payload = state.chartPayload || {};
+  const lines = payload.lines || {};
+  const maCandidates = ["ema20", "ema50", "ma200"].map((key) => {
+    const value = Number(lines[key]?.[index]?.value || 0);
+    return {
+      label: maLineLabels[key] || key.toUpperCase(),
+      price: value,
+    };
+  });
+  const asset = selectedAsset();
+  const position = positionForAsset(asset, payload);
+  const tradeLines = displayTradeLinesForChart(payload, position);
+  const averagePrice = averagePriceForChart(asset, payload, position);
+  const staticCandidates = [
+    { label: "평단", price: averagePrice },
+    { label: "지지", price: Number(payload.levels?.support || lines.support || 0) },
+    { label: "저항", price: Number(payload.levels?.resistance || lines.resistance || 0) },
+    { label: "손절", price: Number(tradeLines.stopLoss || lines.stop_loss || 0) },
+    { label: "목표1", price: Number((tradeLines.targets || lines.take_profit || [])[0] || 0) },
+  ];
+  return [...maCandidates, ...staticCandidates];
+}
+
 function renderMeasurement() {
   const layer = document.getElementById("measureLayer");
   if (!layer) return;
@@ -2361,41 +2400,56 @@ function renderMeasurement() {
   layer.innerHTML = "";
   layer.classList.toggle("hidden", !start);
   if (!start) return;
-
-  layer.appendChild(measurePoint(start, "start"));
-  if (!end) {
-    layer.appendChild(measureCard(start.x + 12, start.y - 42, "시작점 고정", `${formatPointLabel(start)} · 다시 우클릭`, "neutral"));
+  const startPoint = projectMeasurePoint(start);
+  const endPoint = end ? projectMeasurePoint(end) : null;
+  if (!startPoint || (end && !endPoint)) {
+    layer.appendChild(measureCard(8, 8, "측정선 숨김", "선택한 봉이 현재 화면 밖입니다.", "neutral"));
     return;
   }
 
-  layer.appendChild(measurePoint(end, "end"));
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
+  layer.appendChild(measurePoint(startPoint, "start"));
+  if (!end) {
+    layer.appendChild(measureCard(startPoint.x + 12, startPoint.y - 42, "시작점 고정", `${formatPointLabel(start)} · 다시 우클릭`, "neutral"));
+    return;
+  }
+
+  layer.appendChild(measurePoint(endPoint, "end"));
+  const dx = endPoint.x - startPoint.x;
+  const dy = endPoint.y - startPoint.y;
   const length = Math.hypot(dx, dy);
   const angle = Math.atan2(dy, dx) * 180 / Math.PI;
   const line = document.createElement("div");
   line.className = "measure-line";
-  line.style.left = `${start.x}px`;
-  line.style.top = `${start.y}px`;
+  line.style.left = `${startPoint.x}px`;
+  line.style.top = `${startPoint.y}px`;
   line.style.width = `${length}px`;
   line.style.transform = `rotate(${angle}deg)`;
   layer.appendChild(line);
 
   const delta = end.price - start.price;
   const pct = start.price ? delta / start.price * 100 : 0;
+  const heightPct = Math.abs(pct);
   const bars = countCandlesBetween(start.time, end.time);
   const tone = pct >= 0 ? "positive" : "negative";
-  const midX = (start.x + end.x) / 2;
-  const midY = (start.y + end.y) / 2;
+  const midX = (startPoint.x + endPoint.x) / 2;
+  const midY = (startPoint.y + endPoint.y) / 2;
   const labelX = clamp(midX + 12, 8, Math.max(8, layer.clientWidth - 220));
   const labelY = clamp(midY - 48, 8, Math.max(8, layer.clientHeight - 76));
   layer.appendChild(measureCard(
     labelX,
     labelY,
-    `등락폭 ${formatPct(pct)}`,
-    `${formatSignedPrice(delta)} · ${bars}봉 · ${start.snapLabel}→${end.snapLabel}`,
+    `높이차 ${formatPct(pct)}`,
+    `${formatSignedPrice(delta)} · 절대 ${formatPctPlain(heightPct)}% · ${bars}봉 · ${start.snapLabel}→${end.snapLabel}`,
     tone,
   ));
+}
+
+function projectMeasurePoint(point) {
+  if (!point || !state.chart || !state.candleSeries) return null;
+  const x = state.chart.timeScale().timeToCoordinate(point.time);
+  const y = state.candleSeries.priceToCoordinate(point.price);
+  if (x == null || y == null || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+  return { ...point, x, y };
 }
 
 function measurePoint(point, type) {
