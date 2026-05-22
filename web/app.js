@@ -653,6 +653,7 @@ function renderPortfolioOverview(portfolio, updatedAt = "", performance = null) 
   setText("overviewInvested", `${moneyFormat.format(Math.round(positionValue))} KRW`);
   setText("overviewCount", `${positions.length}개`);
   setText("overviewFreshness", state.stream.enabled ? `실시간 ${lastTick}` : `스냅샷 ${shortTime(updatedAt).slice(11, 19)}`);
+  renderActualAllocation(positions, cash, totalEquity);
 
   const cards = document.getElementById("holdingCards");
   if (!cards) return;
@@ -666,6 +667,53 @@ function renderPortfolioOverview(portfolio, updatedAt = "", performance = null) 
     return;
   }
   cards.innerHTML = positions.map((position) => holdingCard(position, totalEquity)).join("");
+}
+
+function renderActualAllocation(positions, cash, totalEquity) {
+  const stack = document.getElementById("allocationStack");
+  const list = document.getElementById("allocationList");
+  if (!stack || !list) return;
+
+  const positionBySymbol = new Map();
+  positions.forEach((position) => {
+    const symbol = position.instrument.replace("KRW-", "").replace("USDT", "");
+    positionBySymbol.set(symbol, position);
+  });
+
+  const items = [
+    { symbol: "KRW", label: "현금", value: cash, className: "cash" },
+    ...streamAssets.map((asset) => {
+      const position = positionBySymbol.get(asset.asset);
+      return {
+        symbol: asset.asset,
+        label: asset.asset,
+        value: Number(position?.value || 0),
+        className: asset.asset.toLowerCase(),
+      };
+    }),
+  ].map((item) => ({
+    ...item,
+    pct: totalEquity > 0 ? (Number(item.value || 0) / totalEquity) * 100 : 0,
+  }));
+
+  const activeItems = items.filter((item) => item.value > 0);
+  stack.innerHTML = activeItems.length
+    ? activeItems.map((item) => `
+      <span
+        class="allocation-segment ${item.className}"
+        style="width: ${Math.max(item.pct, 1.5)}%"
+        title="${item.label} ${formatWeightPct(item.pct)}"
+      ></span>
+    `).join("")
+    : `<span class="allocation-segment empty" style="width: 100%"></span>`;
+
+  list.innerHTML = items.map((item) => `
+    <div class="allocation-row ${item.value > 0 ? "" : "is-empty"}">
+      <span><i class="coin-dot ${item.className}"></i>${item.label}</span>
+      <strong>${formatWeightPct(item.pct)}</strong>
+      <b>${moneyFormat.format(Math.round(item.value))} KRW</b>
+    </div>
+  `).join("");
 }
 
 function holdingCard(position, totalEquity) {
@@ -1514,6 +1562,12 @@ function formatPct(value) {
   const number = Number(value || 0);
   const sign = number > 0 ? "+" : "";
   return `${sign}${number.toFixed(2)}%`;
+}
+
+function formatWeightPct(value) {
+  const number = Number(value || 0);
+  if (number >= 10) return `${number.toFixed(1)}%`;
+  return `${number.toFixed(2)}%`;
 }
 
 function formatSignedMoney(value, currency = "KRW") {

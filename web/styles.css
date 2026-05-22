@@ -408,6 +408,7 @@ h1 {
 }
 
 .portfolio-summary,
+.actual-allocation,
 .holding-card,
 .holding-empty {
   border: 1px solid var(--border-soft);
@@ -516,6 +517,119 @@ h1 {
   display: grid;
   grid-template-columns: repeat(3, minmax(170px, 1fr));
   gap: 10px;
+}
+
+.actual-allocation {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.allocation-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.allocation-head h2 {
+  font-size: 17px;
+}
+
+.allocation-head p,
+.allocation-head span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.allocation-stack {
+  overflow: hidden;
+  display: flex;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.12);
+}
+
+.allocation-segment {
+  min-width: 6px;
+  height: 100%;
+  border-right: 1px solid rgba(2, 6, 23, 0.45);
+}
+
+.allocation-segment:last-child {
+  border-right: 0;
+}
+
+.allocation-list {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.allocation-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 8px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 7px;
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.allocation-row span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.allocation-row strong {
+  color: #f8fafc;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.allocation-row b {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.allocation-row.is-empty {
+  opacity: 0.55;
+}
+
+.coin-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--muted-2);
+}
+
+.cash {
+  background: #94a3b8;
+}
+
+.btc {
+  background: #f59e0b;
+}
+
+.eth {
+  background: #6366f1;
+}
+
+.xrp {
+  background: #64748b;
+}
+
+.sol {
+  background: #14b8a6;
 }
 
 .holding-card {
@@ -1486,6 +1600,10 @@ th {
     grid-template-columns: repeat(2, minmax(180px, 1fr));
   }
 
+  .allocation-list {
+    grid-template-columns: repeat(3, minmax(130px, 1fr));
+  }
+
   .dashboard-grid {
     grid-template-columns: 1fr;
   }
@@ -1528,7 +1646,8 @@ th {
   .book-returns,
   .period-returns,
   .holding-cards,
-  .summary-metrics {
+  .summary-metrics,
+  .allocation-list {
     grid-template-columns: 1fr;
   }
 
