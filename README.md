@@ -159,6 +159,27 @@ Start-ScheduledTask -TaskName "RGCA-L Automation Loop"
 - -1.0% 부근에서 단기 차트가 무너지면 방어청산
 - -2.0%는 강한 방어청산
 
+## Binance Futures 레버리지 TEST
+
+실제 선물 주문은 잠겨 있고, 대시보드는 Binance Futures 차트 기준으로 가상 레버리지 폭만 보여줍니다.
+
+```json
+{
+  "paper_leverage_test": {
+    "enabled": true,
+    "dry_run_only": true,
+    "default_leverage": 3,
+    "compare_leverage": 5,
+    "max_leverage": 5
+  }
+}
+```
+
+- `3x`: 기본 비교값
+- `5x`: 공격 비교값
+- 화면의 목표폭/손절폭은 현재 Binance Futures 차트의 목표가와 손실 제한가를 레버리지 배수로 환산한 값입니다.
+- 이 기능은 paper-only이며 실주문, 레버리지 설정 변경, API 키 변경을 하지 않습니다.
+
 ## 관리감독 로직
 
 자동화 루프는 `automation_runner.py`에서 관리합니다.

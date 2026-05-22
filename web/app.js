@@ -386,6 +386,15 @@ function renderSettingsSummary(data) {
       ],
     },
     {
+      title: "레버리지 테스트",
+      rows: [
+        ["상태", data.paper_leverage_test?.enabled ? "ON" : "OFF"],
+        ["기본", formatLeverage(data.paper_leverage_test?.default_leverage ?? 3)],
+        ["비교", formatLeverage(data.paper_leverage_test?.compare_leverage ?? 5)],
+        ["주문", "실주문 없음"],
+      ],
+    },
+    {
       title: "자동화",
       rows: [
         ["차트", automation.chart_analysis || "15분"],
@@ -470,15 +479,16 @@ function renderAssetCards(assets) {
   });
 }
 
-function renderDecision(asset) {
+function renderDecision(asset, chartPayload = null) {
   if (!asset) return;
-  const displayPrice = priceForVenue(asset, state.venue);
   const displayQuote = venueConfig[state.venue]?.quote || "KRW";
+  const venueLevels = decisionLevelSource(asset, chartPayload);
+  const displayPrice = venueLevels.current;
   document.getElementById("chartTitle").textContent = state.selected.instrument;
   updateChartCaption(asset);
   document.getElementById("decisionMarket").textContent = `${state.selected.instrument} · ${assetMeta[asset.asset]?.korean || asset.asset}`;
   document.getElementById("decisionSignal").textContent = friendlySignalLabel(asset);
-  document.getElementById("decisionSummary").textContent = friendlyDecisionSummary(asset);
+  document.getElementById("decisionSummary").textContent = friendlyDecisionSummary(asset, venueLevels);
   document.getElementById("planCurrent").textContent = `${formatPrice(displayPrice)} ${displayQuote}`;
   const usdtKimchi = Number(asset.kimchi_premium_pct || 0);
   const usdKimchi = kimchiUsdReferencePct(asset);
@@ -488,17 +498,18 @@ function renderDecision(asset) {
     <span class="${pctToneClass(usdtKimchi)}">USDT ${formatPct(usdtKimchi)}</span>
     <span class="${pctToneClass(usdKimchi)}">환율 ${formatNullablePct(usdKimchi)}</span>
   `;
-  document.getElementById("planSupport").textContent = `${formatPrice(asset.nearest_support)} (${asset.support_distance_pct}%)`;
-  document.getElementById("planResistance").textContent = `${formatPrice(asset.nearest_resistance)} (${asset.resistance_distance_pct}%)`;
-  document.getElementById("planStop").textContent = formatPrice(asset.stop_loss);
-  document.getElementById("planTp").textContent = (asset.take_profit || []).map(formatPrice).join(" / ");
+  document.getElementById("planSupport").textContent = `${formatPrice(venueLevels.support)} (${formatPctPlain(venueLevels.supportDistance)}%)`;
+  document.getElementById("planResistance").textContent = `${formatPrice(venueLevels.resistance)} (${formatPctPlain(venueLevels.resistanceDistance)}%)`;
+  document.getElementById("planStop").textContent = formatPrice(venueLevels.stopLoss);
+  document.getElementById("planTp").textContent = (venueLevels.takeProfit || []).map(formatPrice).join(" / ");
   document.getElementById("riskRsi").textContent = asset.rsi;
   document.getElementById("riskAtr").textContent = `${asset.atr_pct}%`;
   document.getElementById("riskVolume").textContent = `${asset.volume_ratio}x`;
   document.getElementById("riskRs").textContent = asset.asset === "BTC" ? "기준 자산" : asset.relative_strength_vs_btc;
+  renderPaperLeverageTest(venueLevels);
   updateOrderFormForVenue();
 
-  const checks = buildChecks(asset);
+  const checks = buildChecks(asset, venueLevels);
   document.getElementById("checkList").innerHTML = checks.map((check) => `
     <div class="check ${check.state}">
       <span class="check-icon">${check.state === "pass" ? "✓" : check.state === "fail" ? "×" : "!"}</span>
@@ -509,6 +520,65 @@ function renderDecision(asset) {
     </div>
   `).join("");
   renderScalpChecks(asset);
+}
+
+function decisionLevelSource(asset, chartPayload = null) {
+  const matchesChart = chartPayload
+    && chartPayload.exchange === state.selected.exchange
+    && chartPayload.instrument === state.selected.instrument
+    && chartPayload.levels
+    && chartPayload.indicators;
+  if (matchesChart) {
+    const current = Number(chartPayload.indicators.close || priceForVenue(asset, state.venue));
+    const support = Number(chartPayload.levels.support || 0);
+    const resistance = Number(chartPayload.levels.resistance || 0);
+    return {
+      current,
+      support,
+      resistance,
+      supportDistance: Number(chartPayload.levels.support_distance_pct || 0),
+      resistanceDistance: Number(chartPayload.levels.resistance_distance_pct || 0),
+      stopLoss: Number(chartPayload.lines?.stop_loss || 0),
+      takeProfit: chartPayload.lines?.take_profit || [],
+      source: state.selected.exchange,
+    };
+  }
+  return {
+    current: priceForVenue(asset, state.venue),
+    support: Number(asset.nearest_support || 0),
+    resistance: Number(asset.nearest_resistance || 0),
+    supportDistance: Number(asset.support_distance_pct || 0),
+    resistanceDistance: Number(asset.resistance_distance_pct || 0),
+    stopLoss: Number(asset.stop_loss || 0),
+    takeProfit: asset.take_profit || [],
+    source: asset.exchange,
+  };
+}
+
+function renderPaperLeverageTest(levels) {
+  const policy = state.dashboard?.paper_leverage_test || {};
+  const isFutures = state.selected.exchange === "binance_futures";
+  const enabled = Boolean(policy.enabled);
+  const leverage = Number(policy.default_leverage || 3);
+  const compare = Number(policy.compare_leverage || 5);
+  if (!enabled || !isFutures) {
+    setText("riskLeverage", "1x");
+    setText("riskLevTarget", "--");
+    setText("riskLevStop", "--");
+    setTone("riskLevTarget", "");
+    setTone("riskLevStop", "");
+    return;
+  }
+  const current = Number(levels.current || 0);
+  const target = Number((levels.takeProfit || [])[0] || levels.resistance || 0);
+  const stop = Number(levels.stopLoss || 0);
+  const targetPct = current > 0 && target > 0 ? ((target / current) - 1) * 100 : 0;
+  const stopPct = current > 0 && stop > 0 ? ((stop / current) - 1) * 100 : 0;
+  setText("riskLeverage", `${formatLeverage(leverage)} / ${formatLeverage(compare)} TEST`);
+  setText("riskLevTarget", `${formatLeverage(leverage)} ${formatPct(targetPct * leverage)} · ${formatLeverage(compare)} ${formatPct(targetPct * compare)}`);
+  setText("riskLevStop", `${formatLeverage(leverage)} ${formatPct(stopPct * leverage)} · ${formatLeverage(compare)} ${formatPct(stopPct * compare)}`);
+  setTone("riskLevTarget", targetPct >= 0 ? "positive" : "negative");
+  setTone("riskLevStop", stopPct >= 0 ? "positive" : "negative");
 }
 
 function updateIndicatorToggle() {
@@ -574,11 +644,11 @@ function updateOrderFormForVenue() {
     : "실주문 없음";
 }
 
-function friendlyDecisionSummary(asset) {
+function friendlyDecisionSummary(asset, levels = {}) {
   const name = assetMeta[asset.asset]?.korean || asset.asset;
   const holding = hasAssetPosition(asset);
-  const support = Number(asset.support_distance_pct || 0).toFixed(2);
-  const resistance = Number(asset.resistance_distance_pct || 0).toFixed(2);
+  const support = Number(levels.supportDistance ?? asset.support_distance_pct ?? 0).toFixed(2);
+  const resistance = Number(levels.resistanceDistance ?? asset.resistance_distance_pct ?? 0).toFixed(2);
   const prefix = holding ? "보유" : "미보유";
   if (asset.signal === "buy") {
     return `${prefix} · 매수 가능 · 지지 ${support}% · 저항 ${resistance}%`;
@@ -609,10 +679,10 @@ function friendlySignalLabel(asset) {
   return signalLabels[asset.signal] || asset.signal || "--";
 }
 
-function buildChecks(asset) {
+function buildChecks(asset, levels = {}) {
   const regime = state.dashboard.market_regime.name;
-  const supportDistance = Number(asset.support_distance_pct || 0);
-  const resistanceDistance = Number(asset.resistance_distance_pct || 0);
+  const supportDistance = Number(levels.supportDistance ?? asset.support_distance_pct ?? 0);
+  const resistanceDistance = Number(levels.resistanceDistance ?? asset.resistance_distance_pct ?? 0);
   const volumeRatio = Number(asset.volume_ratio || 0);
   const rsi = Number(asset.rsi || 0);
   const kimchi = Number(asset.kimchi_premium_pct || 0);
@@ -1154,6 +1224,9 @@ function renderChart(payload) {
   state.chart.timeScale().fitContent();
   document.getElementById("priceTag").textContent = formatPrice(payload.indicators.close);
   renderLineLegend(payload);
+  if (payload.exchange === state.selected.exchange && payload.instrument === state.selected.instrument) {
+    renderDecision(selectedAsset(), payload);
+  }
 }
 
 async function loadMultiTimeframe() {
@@ -1852,6 +1925,15 @@ function formatPct(value) {
   const number = Number(value || 0);
   const sign = number > 0 ? "+" : "";
   return `${sign}${number.toFixed(2)}%`;
+}
+
+function formatPctPlain(value) {
+  return Number(value || 0).toFixed(2);
+}
+
+function formatLeverage(value) {
+  const number = Number(value || 0);
+  return `${Number.isInteger(number) ? number.toFixed(0) : number.toFixed(1)}x`;
 }
 
 function formatNullablePct(value) {

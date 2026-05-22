@@ -107,6 +107,15 @@ DEFAULT_FUTURES_OVERLAY = {
     "gross_notional_cap_pct": 8,
 }
 
+DEFAULT_PAPER_LEVERAGE_TEST = {
+    "enabled": True,
+    "dry_run_only": True,
+    "symbols": ["BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT"],
+    "default_leverage": 3,
+    "compare_leverage": 5,
+    "max_leverage": 5,
+}
+
 ASSETS = [
     {
         "asset": "BTC",
@@ -295,6 +304,7 @@ def build_dashboard() -> dict[str, Any]:
         "supervisor": supervisor_payload(config, now),
         "book_policy": book_policy_payload(config),
         "execution_policy": execution_policy_payload(config),
+        "paper_leverage_test": paper_leverage_test_payload(config),
         "deployment": {
             "stage": config.get("strategy", {}).get("deployment_stage", "dry-run"),
             "sequence": config.get("strategy", {}).get("execution_policy", {}).get(
@@ -452,6 +462,22 @@ def execution_policy_payload(config: dict[str, Any]) -> dict[str, Any]:
             "liquidation_warn_distance_pct": futures.get("liquidation_warn_distance_pct", 15),
             "liquidation_flat_distance_pct": futures.get("liquidation_flat_distance_pct", 10),
         },
+    }
+
+
+def paper_leverage_test_payload(config: dict[str, Any]) -> dict[str, Any]:
+    raw = {**DEFAULT_PAPER_LEVERAGE_TEST, **config.get("strategy", {}).get("paper_leverage_test", {})}
+    max_leverage = max(1.0, float(raw.get("max_leverage", 5)))
+    default_leverage = min(max(float(raw.get("default_leverage", 3)), 1.0), max_leverage)
+    compare_leverage = min(max(float(raw.get("compare_leverage", 5)), 1.0), max_leverage)
+    return {
+        "enabled": bool(raw.get("enabled", True)),
+        "dry_run_only": bool(raw.get("dry_run_only", True)),
+        "symbols": list(raw.get("symbols", DEFAULT_PAPER_LEVERAGE_TEST["symbols"])),
+        "default_leverage": default_leverage,
+        "compare_leverage": compare_leverage,
+        "max_leverage": max_leverage,
+        "mode": "paper_only",
     }
 
 

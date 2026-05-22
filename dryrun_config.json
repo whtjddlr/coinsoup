@@ -75,6 +75,14 @@
       "liquidation_flat_distance_pct": 10,
       "daily_futures_loss_stop_pct": 0.75
     },
+    "paper_leverage_test": {
+      "enabled": true,
+      "dry_run_only": true,
+      "symbols": ["BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT"],
+      "default_leverage": 3,
+      "compare_leverage": 5,
+      "max_leverage": 5
+    },
     "execution_policy": {
       "phase_sequence": ["shadow", "order-intent", "test/demo", "micro-live"],
       "current_phase": "dry-run",
