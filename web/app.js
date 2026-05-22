@@ -361,7 +361,8 @@ function renderAssetCards(assets) {
     const flash = asset._flash ? `flash-${asset._flash}` : "";
     const meta = assetMeta[asset.asset] || { icon: asset.asset[0], className: "", korean: asset.asset };
     const changeClass = Number(asset.change_24h_pct) >= 0 ? "positive" : "negative";
-    const kimchiClass = Number(asset.kimchi_premium_pct) >= 0 ? "positive" : "negative";
+    const usdtKimchi = Number(asset.kimchi_premium_pct || 0);
+    const usdKimchi = kimchiUsdReferencePct(asset);
     return `
       <button class="asset-card ${active} ${flash}" data-instrument="${displayInstrument}" data-exchange="${displayExchange}" data-asset="${asset.asset}">
         <div class="asset-top">
@@ -378,7 +379,8 @@ function renderAssetCards(assets) {
         <div class="price">${formatPrice(displayPrice)}<span>${displayQuote}</span></div>
         <div class="asset-metrics">
           <span>하루 변동 <strong class="${changeClass}">${formatPct(asset.change_24h_pct)}</strong></span>
-          <span>국내 차이 <strong class="${kimchiClass}">${formatPct(asset.kimchi_premium_pct)}</strong></span>
+          <span>USDT 기준 <strong class="${pctToneClass(usdtKimchi)}">${formatPct(usdtKimchi)}</strong></span>
+          <span>환율 기준 <strong class="${pctToneClass(usdKimchi)}">${formatNullablePct(usdKimchi)}</strong></span>
           <span>과열도 <strong>${asset.rsi}</strong></span>
           <span>흔들림 <strong>${asset.atr_pct}%</strong></span>
           <span>지지까지 <strong>${asset.support_distance_pct}%</strong></span>
@@ -413,8 +415,14 @@ function renderDecision(asset) {
   document.getElementById("decisionSignal").textContent = signalLabels[asset.signal] || asset.signal;
   document.getElementById("decisionSummary").textContent = friendlyDecisionSummary(asset);
   document.getElementById("planCurrent").textContent = `${formatPrice(displayPrice)} ${displayQuote}`;
-  document.getElementById("planKimchi").textContent = formatPct(asset.kimchi_premium_pct);
-  document.getElementById("planKimchi").className = Number(asset.kimchi_premium_pct) >= 0 ? "positive" : "negative";
+  const usdtKimchi = Number(asset.kimchi_premium_pct || 0);
+  const usdKimchi = kimchiUsdReferencePct(asset);
+  const kimchiEl = document.getElementById("planKimchi");
+  kimchiEl.className = "kimchi-pair";
+  kimchiEl.innerHTML = `
+    <span class="${pctToneClass(usdtKimchi)}">USDT ${formatPct(usdtKimchi)}</span>
+    <span class="${pctToneClass(usdKimchi)}">환율 ${formatNullablePct(usdKimchi)}</span>
+  `;
   document.getElementById("planSupport").textContent = `${formatPrice(asset.nearest_support)} (${asset.support_distance_pct}%)`;
   document.getElementById("planResistance").textContent = `${formatPrice(asset.nearest_resistance)} (${asset.resistance_distance_pct}%)`;
   document.getElementById("planStop").textContent = formatPrice(asset.stop_loss);
@@ -567,7 +575,7 @@ function buildChecks(asset) {
     },
     {
       label: "무리해서 사는 자리인지",
-      detail: `과열도 ${rsi.toFixed(1)}, 국내 가격 차이 ${formatPct(kimchi)} 기준입니다.`,
+      detail: `과열도 ${rsi.toFixed(1)}, 국내외 가격 차이 ${friendlyKimchiText(asset)} 기준입니다.`,
       state: overheatState,
       tag: overheatState === "pass" ? "낮음" : overheatState === "caution" ? "주의" : "높음",
     },
@@ -1704,6 +1712,30 @@ function formatPct(value) {
   const number = Number(value || 0);
   const sign = number > 0 ? "+" : "";
   return `${sign}${number.toFixed(2)}%`;
+}
+
+function formatNullablePct(value) {
+  if (value == null || !Number.isFinite(Number(value))) return "--";
+  return formatPct(value);
+}
+
+function pctToneClass(value) {
+  return Number(value || 0) >= 0 ? "positive" : "negative";
+}
+
+function kimchiUsdReferencePct(asset) {
+  const price = Number(asset?.current_price || 0);
+  const binance = Number(asset?.binance_price || 0);
+  const usdKrw = Number(state.dashboard?.usd_krw_reference || 0);
+  const overseas = binance * usdKrw;
+  if (!Number.isFinite(price) || !Number.isFinite(overseas) || price <= 0 || overseas <= 0) return null;
+  return (price / overseas - 1) * 100;
+}
+
+function friendlyKimchiText(asset) {
+  const usdt = Number(asset?.kimchi_premium_pct || 0);
+  const usd = kimchiUsdReferencePct(asset);
+  return `USDT 기준 ${formatPct(usdt)}, 환율 기준 ${formatNullablePct(usd)}`;
 }
 
 function formatWeightPct(value) {

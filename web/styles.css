@@ -1345,6 +1345,14 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
+.risk-grid .kimchi-pair {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  line-height: 1.25;
+}
+
 .order-form {
   display: grid;
   gap: 10px;
