@@ -249,6 +249,14 @@
                   <button class="tool-btn" data-timeframe="1M">월봉</button>
                   <button id="scalpToggle" class="tool-btn scalp-toggle" type="button">초단기 OFF</button>
                   <button id="indicatorToggle" class="tool-btn" type="button">보조선 보기</button>
+                  <label class="tool-select-wrap" title="선택한 두 이평선의 위아래 폭을 비교합니다.">
+                    <span>이평 폭</span>
+                    <select id="maSpreadPair" aria-label="이평선 폭 비교">
+                      <option value="ema20:ema50">EMA20↔EMA50</option>
+                      <option value="ema20:ma200">EMA20↔MA200</option>
+                      <option value="ema50:ma200">EMA50↔MA200</option>
+                    </select>
+                  </label>
                 </div>
               </div>
               <div class="chart-wrap">
@@ -446,6 +454,6 @@
         </section>
       </main>
     </div>
-    <script src="/app.js?v=trade-reason1"></script>
+    <script src="/app.js?v=ma-spread1"></script>
   </body>
 </html>

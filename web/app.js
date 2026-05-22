@@ -9,6 +9,7 @@ const state = {
   priceLines: [],
   chartPayload: null,
   showIndicators: false,
+  maSpreadPair: "ema20:ema50",
   scalpMode: false,
   measure: { start: null, end: null },
   measureReady: false,
@@ -71,6 +72,18 @@ const timeframeLabels = {
   "1M": "월봉",
 };
 
+const maLineLabels = {
+  ema20: "EMA20",
+  ema50: "EMA50",
+  ma200: "MA200",
+};
+
+const maSpreadPairs = [
+  { value: "ema20:ema50", label: "EMA20↔EMA50" },
+  { value: "ema20:ma200", label: "EMA20↔MA200" },
+  { value: "ema50:ma200", label: "EMA50↔MA200" },
+];
+
 const streamAssets = [
   { asset: "BTC", upbit: "KRW-BTC", binance: "BTCUSDT" },
   { asset: "ETH", upbit: "KRW-ETH", binance: "ETHUSDT" },
@@ -121,6 +134,18 @@ document.addEventListener("DOMContentLoaded", () => {
     updateIndicatorToggle();
     if (state.chartPayload) renderChart(state.chartPayload);
   });
+  const maSpreadSelect = document.getElementById("maSpreadPair");
+  if (maSpreadSelect) {
+    maSpreadSelect.value = state.maSpreadPair;
+    maSpreadSelect.addEventListener("change", () => {
+      state.maSpreadPair = maSpreadSelect.value || "ema20:ema50";
+      if (!state.showIndicators) {
+        state.showIndicators = true;
+        updateIndicatorToggle();
+      }
+      if (state.chartPayload) renderChart(state.chartPayload);
+    });
+  }
   document.querySelectorAll(".tool-btn[data-timeframe]").forEach((button) => {
     button.addEventListener("click", () => {
       document.querySelectorAll(".tool-btn[data-timeframe]").forEach((item) => item.classList.remove("active"));
@@ -1337,6 +1362,7 @@ function renderChart(payload) {
       series.setData(payload.lines[key].map((point, index) => ({ time: payload.candles[index]?.time, value: point.value })).filter((point) => point.time));
       state.lineSeries.push(series);
     });
+    addMaSpreadCurrentLines(payload);
   }
   const asset = selectedAsset();
   const position = positionForAsset(asset, payload);
@@ -1910,6 +1936,68 @@ function updateStreamStatus(forcedLabel = "") {
   label.textContent = "연결중";
 }
 
+function addMaSpreadCurrentLines(payload) {
+  const spread = maSpreadSummary(payload);
+  if (!spread) return;
+  addPriceLine(spread.upperValue, "#facc15", `${spread.upperLabel} 위`, { lineStyle: 2, axisLabelVisible: true });
+  addPriceLine(spread.lowerValue, "#38bdf8", `${spread.lowerLabel} 아래`, { lineStyle: 2, axisLabelVisible: true });
+}
+
+function maSpreadSummary(payload) {
+  const [firstKey, secondKey] = selectedMaSpreadKeys();
+  const firstValue = currentMaValue(payload, firstKey);
+  const secondValue = currentMaValue(payload, secondKey);
+  if (firstValue <= 0 || secondValue <= 0) return null;
+  const firstLabel = maLineLabels[firstKey] || firstKey.toUpperCase();
+  const secondLabel = maLineLabels[secondKey] || secondKey.toUpperCase();
+  const firstIsUpper = firstValue >= secondValue;
+  const upperLabel = firstIsUpper ? firstLabel : secondLabel;
+  const lowerLabel = firstIsUpper ? secondLabel : firstLabel;
+  const upperValue = firstIsUpper ? firstValue : secondValue;
+  const lowerValue = firstIsUpper ? secondValue : firstValue;
+  const gapPct = Math.abs(rawMovePct(lowerValue, upperValue));
+  return {
+    firstLabel,
+    secondLabel,
+    firstValue,
+    secondValue,
+    upperLabel,
+    lowerLabel,
+    upperValue,
+    lowerValue,
+    gapPct,
+    stateLabel: maSpreadState(gapPct),
+  };
+}
+
+function selectedMaSpreadKeys() {
+  const selected = maSpreadPairs.find((pair) => pair.value === state.maSpreadPair) || maSpreadPairs[0];
+  return selected.value.split(":");
+}
+
+function currentMaValue(payload, key) {
+  const indicatorValue = Number(payload?.indicators?.[key] || 0);
+  if (indicatorValue > 0) return indicatorValue;
+  return lastLineValue(payload?.lines?.[key]);
+}
+
+function lastLineValue(points) {
+  if (!Array.isArray(points)) return Number(points || 0);
+  for (let index = points.length - 1; index >= 0; index -= 1) {
+    const value = Number(points[index]?.value ?? points[index] ?? 0);
+    if (value > 0) return value;
+  }
+  return 0;
+}
+
+function maSpreadState(gapPct) {
+  const gap = Number(gapPct || 0);
+  if (gap < 0.12) return "거의 붙음";
+  if (gap < 0.6) return "가까움";
+  if (gap < 1.5) return "벌어짐";
+  return "크게 벌어짐";
+}
+
 function renderLineLegend(payload, context = {}) {
   const asset = selectedAsset();
   const position = context.position || positionForAsset(asset, payload);
@@ -1930,6 +2018,7 @@ function renderLineLegend(payload, context = {}) {
     target: Number(takeProfit[0] || 0),
     position,
   });
+  const maSpread = maSpreadSummary(payload);
   const indicatorLegend = state.showIndicators
     ? `
       <span class="legend-chip ema20" title="20봉 지수이동평균선">EMA20</span>
@@ -1949,6 +2038,12 @@ function renderLineLegend(payload, context = {}) {
     <span class="legend-chip muted-chip">과열도 ${Number(payload.indicators.rsi).toFixed(1)}</span>
     <span class="legend-chip muted-chip">흔들림 ${Number(payload.indicators.atr_pct).toFixed(2)}%</span>
     <span class="legend-chip muted-chip">거래 힘 ${Number(payload.indicators.volume_ratio).toFixed(2)}x</span>
+    ${maSpread ? `<div class="ma-spread-grid">
+      <span class="ma-spread-item"><b>이평 위</b>${maSpread.upperLabel} ${formatPrice(maSpread.upperValue)}</span>
+      <span class="ma-spread-item"><b>이평 아래</b>${maSpread.lowerLabel} ${formatPrice(maSpread.lowerValue)}</span>
+      <span class="ma-spread-item accent"><b>이평 폭</b>${formatPctPlain(maSpread.gapPct)}%</span>
+      <span class="ma-spread-item"><b>상태</b>${maSpread.stateLabel}</span>
+    </div>` : ""}
     ${gapItems.length ? `<div class="line-gap-grid">${gapItems.map((item) => `
       <span class="line-gap ${item.tone}"><b>${item.label}</b>${item.value}</span>
     `).join("")}</div>` : ""}
