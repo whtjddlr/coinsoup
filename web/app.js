@@ -12,6 +12,7 @@ const state = {
   scalpMode: false,
   measure: { start: null, end: null },
   measureReady: false,
+  tradeFilter: "all",
   stream: {
     enabled: true,
     upbit: null,
@@ -101,6 +102,15 @@ document.addEventListener("DOMContentLoaded", () => {
   document.getElementById("refreshBtn").addEventListener("click", loadDashboard);
   document.getElementById("decisionRefresh").addEventListener("click", loadDashboard);
   document.getElementById("runPlanBtn").addEventListener("click", runDailyPlan);
+  document.querySelectorAll("[data-trade-filter]").forEach((button) => {
+    button.addEventListener("click", () => {
+      state.tradeFilter = button.dataset.tradeFilter || "all";
+      document.querySelectorAll("[data-trade-filter]").forEach((item) => {
+        item.classList.toggle("active", item.dataset.tradeFilter === state.tradeFilter);
+      });
+      renderTrades(state.dashboard?.trades || []);
+    });
+  });
   document.getElementById("streamToggle").addEventListener("click", toggleStreaming);
   document.getElementById("scalpToggle").addEventListener("click", toggleScalpMode);
   document.querySelectorAll(".exchange-tabs .tab[data-venue]").forEach((button) => {
@@ -316,7 +326,7 @@ function renderSettingsSummary(data) {
         ["차트 분석", automation.chart_analysis || "15분마다"],
         ["지지/저항", automation.support_resistance || "봉 마감 후"],
         ["주문 계획", automation.paper_plan || "09:12"],
-        ["수익 스냅샷", `${performance.snapshot_count ?? 0}개`],
+        ["수익 자동 기록", `${performance.snapshot_count ?? 0}개`],
       ],
     },
   ];
@@ -652,7 +662,7 @@ function renderPortfolioOverview(portfolio, updatedAt = "", performance = null) 
   setText("overviewCash", `${moneyFormat.format(Math.round(cash))} KRW`);
   setText("overviewInvested", `${moneyFormat.format(Math.round(positionValue))} KRW`);
   setText("overviewCount", `${positions.length}개`);
-  setText("overviewFreshness", state.stream.enabled ? `실시간 ${lastTick}` : `스냅샷 ${shortTime(updatedAt).slice(11, 19)}`);
+  setText("overviewFreshness", state.stream.enabled ? `실시간 ${lastTick}` : `기록 시점 ${shortTime(updatedAt).slice(11, 19)}`);
   renderActualAllocation(positions, cash, totalEquity);
 
   const cards = document.getElementById("holdingCards");
@@ -791,7 +801,7 @@ function renderPerformance(performance) {
     <strong>${formatSignedMoney(total.pnl_krw, "KRW")}</strong>
     <em>${formatPct(total.return_pct)}</em>
   `;
-  document.getElementById("performanceNote").textContent = `${performance.conversion_note} · 스냅샷 ${performance.snapshot_count}개`;
+  document.getElementById("performanceNote").textContent = `${performance.conversion_note} · 자동 기록 ${performance.snapshot_count}개`;
 
   document.getElementById("bookReturns").innerHTML = (performance.books || []).map((book) => {
     const pnlClass = Number(book.pnl || 0) >= 0 ? "positive" : "negative";
@@ -830,27 +840,137 @@ function renderPerformance(performance) {
           </tr>
         `;
       }).join("")
-    : `<tr><td colspan="4">아직 시간별 수익을 계산할 스냅샷이 부족합니다.</td></tr>`;
+    : `<tr><td colspan="4">아직 시간별 수익을 계산할 자동 기록이 부족합니다.</td></tr>`;
 }
 
 function renderTrades(trades) {
   const body = document.getElementById("tradesBody");
-  if (!trades.length) {
-    body.innerHTML = `<tr><td colspan="8">아직 거래 로그가 없습니다.</td></tr>`;
+  const summaryRoot = document.getElementById("tradeSummary");
+  const cardsRoot = document.getElementById("tradeCards");
+  const allTrades = trades || [];
+  const filtered = allTrades.filter((trade) => {
+    if (state.tradeFilter === "all") return true;
+    if (state.tradeFilter === "skipped") return trade.status === "skipped";
+    return trade.side === state.tradeFilter;
+  });
+  renderTradeSummary(allTrades, summaryRoot);
+
+  if (!allTrades.length) {
+    if (cardsRoot) {
+      cardsRoot.innerHTML = `
+        <div class="trade-empty">
+          <strong>아직 매수/매도 기록이 없습니다.</strong>
+          <span>가상 주문이 실행되면 최근 기록이 여기에 카드로 표시됩니다.</span>
+        </div>
+      `;
+    }
+    body.innerHTML = `<tr><td colspan="8">아직 매수/매도 기록이 없습니다.</td></tr>`;
     return;
   }
-  body.innerHTML = trades.slice(0, 12).map((trade) => `
+
+  if (cardsRoot) {
+    cardsRoot.innerHTML = filtered.length
+      ? filtered.slice(0, 8).map(renderTradeCard).join("")
+      : `
+        <div class="trade-empty">
+          <strong>이 필터에 해당하는 기록이 없습니다.</strong>
+          <span>전체, 매수, 매도, 스킵 필터를 바꿔서 확인해보세요.</span>
+        </div>
+      `;
+  }
+
+  if (!filtered.length) {
+    body.innerHTML = `<tr><td colspan="8">이 필터에 해당하는 기록이 없습니다.</td></tr>`;
+    return;
+  }
+
+  body.innerHTML = filtered.slice(0, 20).map((trade) => `
     <tr>
       <td>${shortTime(trade.timestamp).slice(5)}</td>
-      <td>${trade.exchange}</td>
       <td>${trade.instrument}</td>
-      <td class="${trade.side === "buy" ? "positive" : "negative"}">${translateSide(trade.side)}</td>
+      <td><span class="trade-side ${tradeSideClass(trade)}">${translateSide(trade.side)}</span></td>
+      <td>${tradeExecutedAmount(trade)}</td>
       <td>${formatPrice(trade.effective_price || trade.price)}</td>
-      <td>${trade.base_quantity || "--"}</td>
-      <td>${translateStatus(trade.status)}</td>
+      <td>${formatQuantity(trade.base_quantity)}</td>
+      <td><span class="trade-status ${tradeStatusClass(trade.status)}">${translateStatus(trade.status)}</span></td>
       <td>${translateNote(trade.note)}</td>
     </tr>
   `).join("");
+}
+
+function renderTradeSummary(trades, root) {
+  if (!root) return;
+  const simulated = trades.filter((trade) => trade.status === "simulated");
+  const buys = simulated.filter((trade) => trade.side === "buy");
+  const sells = simulated.filter((trade) => trade.side === "sell");
+  const skipped = trades.filter((trade) => trade.status === "skipped");
+  const buyTotal = buys.reduce((sum, trade) => sum + Number(trade.executed_quote_value || 0), 0);
+  const sellTotal = sells.reduce((sum, trade) => sum + Number(trade.executed_quote_value || 0), 0);
+  const realized = sells.reduce((sum, trade) => sum + Number(trade.realized_pnl || 0), 0);
+  root.innerHTML = `
+    <div class="trade-summary-card buy">
+      <span>가상 매수</span>
+      <strong>${moneyFormat.format(Math.round(buyTotal))} KRW</strong>
+      <b>${buys.length}건</b>
+    </div>
+    <div class="trade-summary-card sell">
+      <span>가상 매도</span>
+      <strong>${moneyFormat.format(Math.round(sellTotal))} KRW</strong>
+      <b>${sells.length}건</b>
+    </div>
+    <div class="trade-summary-card ${realized >= 0 ? "positive-card" : "negative-card"}">
+      <span>매도로 확정된 손익</span>
+      <strong>${formatSignedMoney(realized, "KRW")}</strong>
+      <b>${sells.length ? "실현손익" : "매도 없음"}</b>
+    </div>
+    <div class="trade-summary-card muted-card">
+      <span>스킵</span>
+      <strong>${skipped.length}건</strong>
+      <b>중복/조건 미충족</b>
+    </div>
+  `;
+}
+
+function renderTradeCard(trade) {
+  const sideClass = tradeSideClass(trade);
+  const statusClass = tradeStatusClass(trade.status);
+  const isSkipped = trade.status === "skipped";
+  return `
+    <article class="trade-card ${sideClass} ${isSkipped ? "is-skipped" : ""}">
+      <div class="trade-card-head">
+        <div>
+          <span>${shortTime(trade.timestamp).slice(5)}</span>
+          <strong>${trade.instrument}</strong>
+        </div>
+        <span class="trade-side ${sideClass}">${translateSide(trade.side)}</span>
+      </div>
+      <div class="trade-card-main">
+        <strong>${tradeExecutedAmount(trade)}</strong>
+        <span>${formatPrice(trade.effective_price || trade.price)} · ${formatQuantity(trade.base_quantity)}</span>
+      </div>
+      <div class="trade-card-foot">
+        <span class="trade-status ${statusClass}">${translateStatus(trade.status)}</span>
+        <span>${translateNote(trade.note)}</span>
+      </div>
+    </article>
+  `;
+}
+
+function tradeExecutedAmount(trade) {
+  const value = Number(trade.executed_quote_value || trade.requested_quote_budget || 0);
+  if (!value) return "--";
+  return `${moneyFormat.format(Math.round(value))} ${trade.quote_currency || "KRW"}`;
+}
+
+function tradeSideClass(trade) {
+  if (trade.status === "skipped") return "muted";
+  return trade.side === "sell" ? "sell" : "buy";
+}
+
+function tradeStatusClass(status) {
+  if (status === "simulated") return "filled";
+  if (status === "skipped") return "skipped";
+  return "pending";
 }
 
 async function loadChart() {
@@ -1625,7 +1745,7 @@ function translateSide(side) {
 }
 
 function translateStatus(status) {
-  return status === "simulated" ? "체결" : status === "skipped" ? "스킵" : status;
+  return status === "simulated" ? "가상 체결" : status === "skipped" ? "스킵" : status;
 }
 
 function translatePhase(phase) {
@@ -1657,9 +1777,15 @@ function translateOrderType(type) {
 }
 
 function translateNote(note = "") {
-  if (note.includes("no real order")) return "주문 전송 없음";
-  if (note.includes("already simulated")) return "오늘 이미 실행됨";
+  if (note.includes("paper buy")) return "가상 매수, 실제 주문 없음";
+  if (note.includes("paper sell")) return "가상 매도, 실제 주문 없음";
+  if (note.includes("no real order")) return "실제 주문 전송 없음";
+  if (note.includes("already simulated")) return "중복 방지로 스킵";
   if (note.includes("below minimum")) return "최소금액 미만";
-  if (note.includes("insufficient")) return "잔고 부족";
+  if (note.includes("insufficient virtual cash")) return "가상 현금 부족";
+  if (note.includes("insufficient virtual position")) return "가상 보유량 부족";
+  if (note.includes("no virtual position")) return "보유 포지션 없음";
+  if (note.includes("price unavailable")) return "가격 데이터 없음";
+  if (note.includes("insufficient")) return "잔고/보유량 부족";
   return note;
 }
