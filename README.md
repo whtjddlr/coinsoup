@@ -140,10 +140,10 @@ Start-ScheduledTask -TaskName "RGCA-L Automation Loop"
   "chart_trade_asset_cap_krw": "250000",
   "chart_trade_cash_reserve_krw": "200000",
   "chart_trade_reentry_cooldown_minutes": 15,
-  "chart_trade_take_profit_pct": "0.45",
-  "chart_trade_runner_take_profit_pct": "1.2",
-  "chart_trade_stop_loss_pct": "-1.0",
-  "chart_trade_hard_stop_loss_pct": "-2.0",
+  "chart_trade_take_profit_pct": "1.2",
+  "chart_trade_runner_take_profit_pct": "2.4",
+  "chart_trade_stop_loss_pct": "-1.6",
+  "chart_trade_hard_stop_loss_pct": "-3.0",
   "chart_trade_partial_sell_fraction": "0.5"
 }
 ```
@@ -154,10 +154,12 @@ Start-ScheduledTask -TaskName "RGCA-L Automation Loop"
 - 종목당 최대 보유 한도: 250,000 KRW
 - 최소 현금 보유: 200,000 KRW
 - 같은 종목 재진입 쿨다운: 15분
-- +0.45% 부근부터 부분 익절 검토
-- +1.2% 이상이면 수익 보호성 부분청산
-- -1.0% 부근에서 단기 차트가 무너지면 방어청산
-- -2.0%는 강한 방어청산
+- +1.2% 부근부터 부분 익절 검토
+- +2.4% 이상이면 수익 보호성 부분청산
+- -1.6% 부근에서 단기 차트가 무너지면 방어청산
+- -3.0%는 강한 방어청산
+
+차트의 목표선/손실 제한선은 고정 퍼센트만 쓰지 않고, 현재가와 ATR 기준 최소 폭을 둡니다. 가까운 저항선은 별도로 표시하고, 실제 목표선은 너무 붙지 않도록 한 번 더 넓혀 보여줍니다.
 
 ## Binance Futures 레버리지 TEST
 

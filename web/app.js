@@ -1215,12 +1215,16 @@ function renderChart(payload) {
       state.lineSeries.push(series);
     });
   }
-  addPriceLine(payload.lines.support, "#22c55e", "지지선");
-  addPriceLine(payload.lines.resistance, "#ef4444", "저항선");
+  addMagnetLines(payload);
+  addExtraLevelLines(payload);
+  addPriceLine(payload.lines.support, "#22c55e", "지지선", { lineWidth: 2 });
+  addPriceLine(payload.lines.resistance, "#ef4444", "저항선", { lineWidth: 2 });
   addPriceLine(payload.lines.stop_loss, "#ef4444", "손실 제한");
   payload.lines.take_profit
     .slice(0, state.showIndicators ? 2 : 1)
     .forEach((price, index) => addPriceLine(price, "#86efac", `수익 목표${index + 1}`));
+  const averagePrice = averagePriceForChart(selectedAsset(), payload);
+  addPriceLine(averagePrice, "#facc15", "평단가", { lineWidth: 2, lineStyle: 1 });
   state.chart.timeScale().fitContent();
   document.getElementById("priceTag").textContent = formatPrice(payload.indicators.close);
   renderLineLegend(payload);
@@ -1336,14 +1340,58 @@ function friendlyMtfReason(row) {
   return `${trend} · ${volume} · ${location}`;
 }
 
-function addPriceLine(price, color, title) {
+function addMagnetLines(payload) {
+  const lines = payload.lines || {};
+  addPriceLine(lines.support_zone_low, "#16a34a", "지지 자석 하단", { lineStyle: 2, axisLabelVisible: false });
+  addPriceLine(lines.support_zone_high, "#16a34a", "지지 자석 상단", { lineStyle: 2, axisLabelVisible: false });
+  addPriceLine(lines.resistance_zone_low, "#f97316", "저항 자석 하단", { lineStyle: 2, axisLabelVisible: false });
+  addPriceLine(lines.resistance_zone_high, "#f97316", "저항 자석 상단", { lineStyle: 2, axisLabelVisible: false });
+}
+
+function addExtraLevelLines(payload) {
+  const lines = payload.lines || {};
+  (lines.support_levels || [])
+    .filter((price) => price && !samePrice(price, lines.support))
+    .slice(0, 2)
+    .forEach((price, index) => addPriceLine(price, "#4ade80", `지지 ${index + 2}`, { lineStyle: 2, axisLabelVisible: false }));
+  (lines.resistance_levels || [])
+    .filter((price) => price && !samePrice(price, lines.resistance))
+    .slice(0, 2)
+    .forEach((price, index) => addPriceLine(price, "#fb7185", `저항 ${index + 2}`, { lineStyle: 2, axisLabelVisible: false }));
+}
+
+function samePrice(a, b) {
+  const first = Number(a || 0);
+  const second = Number(b || 0);
+  if (!first || !second) return false;
+  return Math.abs(first - second) / second < 0.0002;
+}
+
+function averagePriceForChart(asset, payload) {
+  if (!asset || !payload) return 0;
+  const position = positionForAsset(asset);
+  const quantity = Number(position?.quantity || asset.position?.quantity || 0);
+  const average = Number(position?.average_price || asset.position?.average_price || 0);
+  if (quantity <= 0 || average <= 0) return 0;
+  if (payload.exchange === "upbit") return average;
+  const usdtKrw = Number(asset.usdt_krw || state.dashboard?.usdt_krw || 0);
+  return usdtKrw > 0 ? average / usdtKrw : 0;
+}
+
+function positionForAsset(asset) {
+  return (state.dashboard?.portfolio?.positions || []).find((position) => (
+    position.exchange === "upbit" && position.instrument === asset.upbit
+  ));
+}
+
+function addPriceLine(price, color, title, options = {}) {
   if (!price || price <= 0) return;
   const line = state.candleSeries.createPriceLine({
     price,
     color,
-    lineWidth: 1,
-    lineStyle: title === "지지선" || title === "저항선" ? 0 : 2,
-    axisLabelVisible: true,
+    lineWidth: options.lineWidth || 1,
+    lineStyle: options.lineStyle ?? (title === "지지선" || title === "저항선" ? 0 : 2),
+    axisLabelVisible: options.axisLabelVisible ?? true,
     title,
   });
   state.priceLines.push(line);
@@ -1656,6 +1704,8 @@ function updateStreamStatus(forcedLabel = "") {
 
 function renderLineLegend(payload) {
   const takeProfit = payload.lines.take_profit || [];
+  const averagePrice = averagePriceForChart(selectedAsset(), payload);
+  const magnetPct = Number(payload.levels?.magnet_zone_pct || 0);
   const indicatorLegend = state.showIndicators
     ? `
       <span class="legend-chip ema20" title="20봉 지수이동평균선">EMA20</span>
@@ -1665,10 +1715,12 @@ function renderLineLegend(payload) {
     : "";
   document.getElementById("lineLegend").innerHTML = `
     <span class="legend-chip support" title="가격 아래의 주요 지지 구간">지지선 ${formatPrice(payload.levels.support)} (${Number(payload.levels.support_distance_pct).toFixed(2)}%)</span>
+    <span class="legend-chip magnet" title="지지/저항 주변에서 가격이 머뭇거리기 쉬운 구간">자석 ${formatPctPlain(magnetPct)}%</span>
     <span class="legend-chip resistance" title="가격 위의 주요 저항 구간">저항선 ${formatPrice(payload.levels.resistance)} (${Number(payload.levels.resistance_distance_pct).toFixed(2)}%)</span>
     <span class="legend-chip stop" title="손실이 커지기 전에 정리하는 기준가">손실 제한 ${formatPrice(payload.lines.stop_loss)}</span>
     <span class="legend-chip target" title="일부 수익을 챙길 수 있는 목표가">목표1 ${formatPrice(takeProfit[0])}</span>
     ${state.showIndicators && takeProfit[1] ? `<span class="legend-chip target" title="두 번째 수익 목표가">목표2 ${formatPrice(takeProfit[1])}</span>` : ""}
+    ${averagePrice ? `<span class="legend-chip average" title="현재 모의 보유 평균 매수가">평단 ${formatPrice(averagePrice)}</span>` : ""}
     ${indicatorLegend}
     <span class="legend-chip muted-chip">과열도 ${Number(payload.indicators.rsi).toFixed(1)}</span>
     <span class="legend-chip muted-chip">흔들림 ${Number(payload.indicators.atr_pct).toFixed(2)}%</span>

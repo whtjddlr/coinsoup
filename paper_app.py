@@ -582,6 +582,7 @@ def build_candle_payload(exchange: str, instrument: str, timeframe: str) -> dict
     candles = safe_fetch_candles(exchange, instrument, timeframe, 220)
     indicators = compute_indicators(candles) if candles else empty_indicators()
     levels = support_resistance(candles, indicators["atr"]) if candles else empty_levels()
+    trade_lines = chart_trade_lines(indicators["close"], levels, indicators["atr"])
     return {
         "exchange": exchange,
         "instrument": instrument,
@@ -591,11 +592,17 @@ def build_candle_payload(exchange: str, instrument: str, timeframe: str) -> dict
         "lines": {
             "support": levels["support"],
             "resistance": levels["resistance"],
+            "support_zone_low": levels["support_zone_low"],
+            "support_zone_high": levels["support_zone_high"],
+            "resistance_zone_low": levels["resistance_zone_low"],
+            "resistance_zone_high": levels["resistance_zone_high"],
+            "support_levels": [row["level"] for row in levels.get("support_levels", [])[:3]],
+            "resistance_levels": [row["level"] for row in levels.get("resistance_levels", [])[:3]],
             "ema20": ema_series([c.close for c in candles], 20),
             "ema50": ema_series([c.close for c in candles], 50),
             "ma200": sma_series([c.close for c in candles], 200),
-            "stop_loss": max(levels["support"] - indicators["atr"] * 0.5, 0),
-            "take_profit": [levels["resistance"], levels["resistance"] + indicators["atr"]],
+            "stop_loss": trade_lines["stop_loss"],
+            "take_profit": trade_lines["take_profit"],
         },
         "indicators": indicators,
         "levels": levels,
@@ -1920,7 +1927,7 @@ def sma_series(values: list[float], period: int) -> list[dict[str, float | int]]
     return out
 
 
-def support_resistance(candles: list[Candle], atr_value: float) -> dict[str, float]:
+def support_resistance(candles: list[Candle], atr_value: float) -> dict[str, Any]:
     current = candles[-1].close if candles else 0
     if not candles or current == 0:
         return empty_levels()
@@ -1944,6 +1951,7 @@ def support_resistance(candles: list[Candle], atr_value: float) -> dict[str, flo
     resistances = cluster_levels(points, current, "resistance", atr_value)
     support = supports[0]["level"] if supports else min(c.low for c in candles[-20:])
     resistance = resistances[0]["level"] if resistances else max(c.high for c in candles[-20:])
+    zone_pct = magnet_zone_pct(current, atr_value)
     return {
         "support": support,
         "resistance": resistance,
@@ -1951,11 +1959,56 @@ def support_resistance(candles: list[Candle], atr_value: float) -> dict[str, flo
         "resistance_distance_pct": abs(resistance - current) / current * 100,
         "support_score": supports[0]["score"] if supports else 0,
         "resistance_score": resistances[0]["score"] if resistances else 0,
+        "support_zone_low": max(support * (1 - zone_pct / 100), 0),
+        "support_zone_high": support * (1 + zone_pct / 100),
+        "resistance_zone_low": max(resistance * (1 - zone_pct / 100), 0),
+        "resistance_zone_high": resistance * (1 + zone_pct / 100),
+        "magnet_zone_pct": zone_pct,
+        "support_levels": supports[:3],
+        "resistance_levels": resistances[:3],
     }
 
 
-def empty_levels() -> dict[str, float]:
-    return {"support": 0, "resistance": 0, "support_distance_pct": 0, "resistance_distance_pct": 0, "support_score": 0, "resistance_score": 0}
+def empty_levels() -> dict[str, Any]:
+    return {
+        "support": 0,
+        "resistance": 0,
+        "support_distance_pct": 0,
+        "resistance_distance_pct": 0,
+        "support_score": 0,
+        "resistance_score": 0,
+        "support_zone_low": 0,
+        "support_zone_high": 0,
+        "resistance_zone_low": 0,
+        "resistance_zone_high": 0,
+        "magnet_zone_pct": 0,
+        "support_levels": [],
+        "resistance_levels": [],
+    }
+
+
+def magnet_zone_pct(current: float, atr_value: float) -> float:
+    if current <= 0 or atr_value <= 0:
+        return 0.25
+    atr_pct = atr_value / current * 100
+    return max(0.18, min(0.9, atr_pct * 0.55))
+
+
+def chart_trade_lines(close: float, levels: dict[str, Any], atr_value: float) -> dict[str, Any]:
+    if close <= 0:
+        return {"stop_loss": 0, "take_profit": [0, 0]}
+    support = as_number(levels.get("support"))
+    resistance = as_number(levels.get("resistance"))
+    atr = max(as_number(atr_value), close * 0.006)
+    base_resistance = resistance if resistance > close else close
+    target1 = max(base_resistance + atr * 0.35, close * 1.012)
+    target2 = max(target1 + atr * 0.85, close * 1.024)
+    base_support = support if 0 < support < close else close
+    stop_loss = min(base_support - atr * 0.75, close * 0.984)
+    return {
+        "stop_loss": max(stop_loss, 0),
+        "take_profit": [target1, target2],
+    }
 
 
 def cluster_levels(points: list[tuple[str, float, float, int]], current: float, side: str, atr_value: float) -> list[dict[str, float]]:
@@ -2118,8 +2171,7 @@ def signal_payload(
     mode: str,
 ) -> dict[str, Any]:
     close = indicators["close"]
-    stop_loss = max(levels["support"] - indicators["atr"] * 0.5, close * 0.97)
-    take_profit = [levels["resistance"], levels["resistance"] + indicators["atr"]]
+    trade_lines = chart_trade_lines(close, levels, indicators["atr"])
     return {
         "signal": signal,
         "score": score,
@@ -2128,8 +2180,8 @@ def signal_payload(
         "action": "simulate_entry" if signal == "buy" else "no_trade",
         "budget_multiplier": round(budget_multiplier, 2),
         "mode": mode,
-        "stop_loss": stop_loss,
-        "take_profit": take_profit,
+        "stop_loss": trade_lines["stop_loss"],
+        "take_profit": trade_lines["take_profit"],
     }
 
 
