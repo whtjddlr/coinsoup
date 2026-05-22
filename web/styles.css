@@ -1718,6 +1718,42 @@ h1 {
   font-variant-numeric: tabular-nums;
 }
 
+.trade-reason,
+.trade-table-reason {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: #cbd5e1;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.trade-reason {
+  padding: 7px 8px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 6px;
+  background: rgba(2, 6, 23, 0.28);
+}
+
+.trade-reason span,
+.trade-table-reason span,
+.trade-table-reason strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.trade-reason b,
+.trade-table-reason b {
+  margin-right: 6px;
+  color: #93c5fd;
+  font-weight: 900;
+}
+
+.trade-table-reason strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
 .trade-side,
 .trade-status {
   display: inline-flex;

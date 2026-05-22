@@ -1401,6 +1401,8 @@ def open_futures_position(
     cash_after = cash_before - margin - fee
     if cash_after < 0:
         return None
+    decision_note = str(candidate.get("reason", "no clear edge"))
+    score_note = f"score={candidate.get('score', 0)} gap={candidate.get('score_gap', 0)}"
 
     position_key = position_state_key("binance_futures", symbol)
     positions[position_key] = {
@@ -1434,7 +1436,7 @@ def open_futures_position(
         realized_pnl=Decimal("0"),
         dry_run=True,
         status="simulated",
-        note=f"paper futures {side} open; no real order sent",
+        note=f"paper futures {side} open; reason={decision_note}; {score_note}; no real order sent",
     )
 
 
@@ -2300,7 +2302,122 @@ def read_recent_trades(config: dict[str, Any], limit: int) -> list[dict[str, Any
         return []
     with path.open("r", encoding="utf-8") as handle:
         rows = list(csv.DictReader(handle))
-    return rows[-limit:][::-1]
+    futures_context = latest_futures_paper_context()
+    return [enrich_trade_row(row, futures_context, config) for row in rows[-limit:][::-1]]
+
+
+def latest_futures_paper_context() -> dict[str, Any]:
+    path = ROOT / "data" / "snapshots" / "last_futures_paper_result.json"
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return {
+        "candidates": {str(row.get("symbol", "")): row for row in payload.get("candidates", [])},
+        "exits": {str(row.get("symbol", "")): row for row in payload.get("exit_decisions", [])},
+    }
+
+
+def enrich_trade_row(row: dict[str, Any], context: dict[str, Any], config: dict[str, Any]) -> dict[str, Any]:
+    enriched = dict(row)
+    if row.get("exchange") != "binance_futures":
+        enriched["decision_reason"] = spot_trade_reason(row)
+        return enriched
+
+    symbol = str(row.get("instrument", ""))
+    note = str(row.get("note", ""))
+    candidate = context.get("candidates", {}).get(symbol, {})
+    exit_decision = context.get("exits", {}).get(symbol, {})
+    side = futures_side_from_note(note, row)
+    action = "close" if " close" in note else "open"
+    settings = futures_paper_settings(config)
+    enriched["position_direction"] = "숏" if side == "SHORT" else "롱"
+    enriched["direction_help"] = "가격 하락에 베팅" if side == "SHORT" else "가격 상승에 베팅"
+    enriched["decision_reason"] = futures_decision_reason(side, action, candidate, note, exit_decision)
+    enriched["score_summary"] = futures_score_summary(candidate, side)
+    enriched["exit_rule"] = futures_exit_rule(settings)
+    return enriched
+
+
+def spot_trade_reason(row: dict[str, Any]) -> str:
+    if str(row.get("status")) == "skipped":
+        return "조건 미충족"
+    if row.get("side") == "buy":
+        return "현물 가상 매수"
+    if row.get("side") == "sell":
+        return "현물 가상 매도"
+    return ""
+
+
+def futures_side_from_note(note: str, row: dict[str, Any]) -> str:
+    if "SHORT" in note:
+        return "SHORT"
+    if "LONG" in note:
+        return "LONG"
+    return "SHORT" if row.get("side") == "sell" else "LONG"
+
+
+def futures_decision_reason(
+    side: str,
+    action: str,
+    candidate: dict[str, Any],
+    note: str,
+    exit_decision: dict[str, Any],
+) -> str:
+    if action == "close":
+        reason = note.split("close:", 1)[-1].split(";", 1)[0].strip() if "close:" in note else exit_decision.get("reason", "")
+        return f"{'숏' if side == 'SHORT' else '롱'} 포지션 종료: {human_exit_reason(reason)}"
+
+    base = "저항 근처 + 약세 흐름" if side == "SHORT" else "지지 근처 + 반등 흐름"
+    reason = str(candidate.get("reason", ""))
+    if "4h" in reason:
+        base = f"{base} · {human_timeframe_reason(reason)}"
+    return f"{base}이라 {'숏' if side == 'SHORT' else '롱'} 진입"
+
+
+def human_timeframe_reason(reason: str) -> str:
+    text = reason.replace("resistance/weakness setup", "저항/약세")
+    text = text.replace("support/rebound setup", "지지/반등")
+    text = text.replace("no clear edge", "우위 약함")
+    text = text.replace("down", "하락")
+    text = text.replace("up", "상승")
+    text = text.replace("mixed", "혼조")
+    text = text.replace("rsi", "RSI")
+    return text
+
+
+def human_exit_reason(reason: str) -> str:
+    if "take_profit" in reason:
+        return "목표 수익 도달"
+    if "stop_loss" in reason:
+        return "손실 제한 도달"
+    if "reversal" in reason:
+        return "반대 신호 우세"
+    if "price_unavailable" in reason:
+        return "가격 확인 불가"
+    if "in_range" in reason:
+        return "보유 범위 안"
+    return reason or "종료 사유 기록 없음"
+
+
+def futures_score_summary(candidate: dict[str, Any], side: str) -> str:
+    if not candidate:
+        return ""
+    long_score = safe_float(candidate.get("long_score"))
+    short_score = safe_float(candidate.get("short_score"))
+    score_gap = safe_float(candidate.get("score_gap"))
+    chosen = short_score if side == "SHORT" else long_score
+    other = long_score if side == "SHORT" else short_score
+    return f"{'숏' if side == 'SHORT' else '롱'} {chosen:.1f} / 반대 {other:.1f} / 차이 {score_gap:.1f}"
+
+
+def futures_exit_rule(settings: dict[str, Any]) -> str:
+    take_profit = settings.get("take_profit_underlying_pct", 1.6)
+    stop_loss = settings.get("stop_loss_underlying_pct", 1.2)
+    gap = settings.get("reversal_exit_score_gap", 28)
+    return f"목표 {take_profit}% · 손실 제한 {stop_loss}% · 반대 신호 차이 {gap}+"
 
 
 def safe_fetch_candles(exchange: str, instrument: str, timeframe: str, limit: int) -> list[Candle]:

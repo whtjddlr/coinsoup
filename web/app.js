@@ -1119,7 +1119,13 @@ function renderTrades(trades) {
       <td>${formatPrice(trade.effective_price || trade.price)}</td>
       <td>${formatQuantity(trade.base_quantity)}</td>
       <td><span class="trade-status ${tradeStatusClass(trade.status)}">${translateStatus(trade.status)}</span></td>
-      <td>${translateNote(trade.note)}</td>
+      <td>
+        <div class="trade-table-reason">
+          <strong>${trade.decision_reason || translateNote(trade.note)}</strong>
+          ${trade.score_summary ? `<span>${trade.score_summary}</span>` : ""}
+          ${trade.exit_rule ? `<span>${trade.exit_rule}</span>` : ""}
+        </div>
+      </td>
     </tr>
   `).join("");
 }
@@ -1159,6 +1165,9 @@ function renderTradeCard(trade) {
   const sideClass = tradeSideClass(trade);
   const statusClass = tradeStatusClass(trade.status);
   const isSkipped = trade.status === "skipped";
+  const reason = trade.decision_reason || translateNote(trade.note);
+  const score = trade.score_summary || "";
+  const exitRule = trade.exit_rule || "";
   return `
     <article class="trade-card ${sideClass} ${isSkipped ? "is-skipped" : ""}">
       <div class="trade-card-head">
@@ -1172,9 +1181,14 @@ function renderTradeCard(trade) {
         <strong>${tradeExecutedAmount(trade)}</strong>
         <span>수수료 ${tradeFeeAmount(trade)} · ${formatPrice(trade.effective_price || trade.price)} · ${formatQuantity(trade.base_quantity)}</span>
       </div>
+      <div class="trade-reason">
+        <span><b>이유</b>${reason}</span>
+        ${score ? `<span><b>점수</b>${score}</span>` : ""}
+        ${exitRule ? `<span><b>종료</b>${exitRule}</span>` : ""}
+      </div>
       <div class="trade-card-foot">
         <span class="trade-status ${statusClass}">${translateStatus(trade.status)}</span>
-        <span>${translateNote(trade.note)}</span>
+        <span>${trade.direction_help || translateNote(trade.note)}</span>
       </div>
     </article>
   `;
