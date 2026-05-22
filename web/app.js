@@ -1072,7 +1072,7 @@ function renderTrades(trades) {
         </div>
       `;
     }
-    body.innerHTML = `<tr><td colspan="8">기록 없음</td></tr>`;
+    body.innerHTML = `<tr><td colspan="9">기록 없음</td></tr>`;
     return;
   }
 
@@ -1088,7 +1088,7 @@ function renderTrades(trades) {
   }
 
   if (!filtered.length) {
-    body.innerHTML = `<tr><td colspan="8">${state.tradeFilter === "all" ? "체결된 가상 주문 없음" : "기록 없음"}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="9">${state.tradeFilter === "all" ? "체결된 가상 주문 없음" : "기록 없음"}</td></tr>`;
     return;
   }
 
@@ -1098,6 +1098,7 @@ function renderTrades(trades) {
       <td>${trade.instrument}</td>
       <td><span class="trade-side ${tradeSideClass(trade)}">${translateTradeSide(trade)}</span></td>
       <td>${tradeExecutedAmount(trade)}</td>
+      <td>${tradeFeeAmount(trade)}</td>
       <td>${formatPrice(trade.effective_price || trade.price)}</td>
       <td>${formatQuantity(trade.base_quantity)}</td>
       <td><span class="trade-status ${tradeStatusClass(trade.status)}">${translateStatus(trade.status)}</span></td>
@@ -1114,6 +1115,7 @@ function renderTradeSummary(trades, root) {
   const buyTotal = buys.reduce((sum, trade) => sum + Number(trade.executed_quote_value || 0), 0);
   const sellTotal = sells.reduce((sum, trade) => sum + Number(trade.executed_quote_value || 0), 0);
   const realized = sells.reduce((sum, trade) => sum + Number(trade.realized_pnl || 0), 0);
+  const feeSummary = tradeFeeSummary(simulated);
   root.innerHTML = `
     <div class="trade-summary-card buy">
       <span>가상 매수</span>
@@ -1131,9 +1133,9 @@ function renderTradeSummary(trades, root) {
       <b>${sells.length ? "실현손익" : "매도 없음"}</b>
     </div>
     <div class="trade-summary-card muted-card">
-      <span>최근 체결</span>
-      <strong>${simulated.length}건</strong>
-      <b>가상 주문만 표시</b>
+      <span>수수료</span>
+      <strong>${feeSummary.amount}</strong>
+      <b>${feeSummary.detail}</b>
     </div>
   `;
 }
@@ -1153,7 +1155,7 @@ function renderTradeCard(trade) {
       </div>
       <div class="trade-card-main">
         <strong>${tradeExecutedAmount(trade)}</strong>
-        <span>${formatPrice(trade.effective_price || trade.price)} · ${formatQuantity(trade.base_quantity)}</span>
+        <span>수수료 ${tradeFeeAmount(trade)} · ${formatPrice(trade.effective_price || trade.price)} · ${formatQuantity(trade.base_quantity)}</span>
       </div>
       <div class="trade-card-foot">
         <span class="trade-status ${statusClass}">${translateStatus(trade.status)}</span>
@@ -1168,6 +1170,41 @@ function tradeExecutedAmount(trade) {
   const value = Number(trade.executed_quote_value || trade.requested_quote_budget || 0);
   if (!value) return "--";
   return `${moneyFormat.format(Math.round(value))} ${trade.quote_currency || "KRW"}`;
+}
+
+function tradeFeeAmount(trade) {
+  const fee = Number(trade.fee || 0);
+  if (!fee) return "--";
+  return formatFeeAmount(fee, trade.quote_currency || "KRW");
+}
+
+function tradeFeeSummary(trades) {
+  const totals = new Map();
+  trades.forEach((trade) => {
+    const currency = trade.quote_currency || "KRW";
+    totals.set(currency, (totals.get(currency) || 0) + Number(trade.fee || 0));
+  });
+  const entries = [...totals.entries()].filter(([, value]) => value > 0);
+  if (!entries.length) {
+    return { amount: "0 KRW", detail: "수수료 없음" };
+  }
+  if (entries.length === 1) {
+    const [currency, value] = entries[0];
+    return { amount: formatFeeAmount(value, currency), detail: `${trades.length}건 합계` };
+  }
+  return {
+    amount: entries.map(([currency, value]) => formatFeeAmount(value, currency)).join(" / "),
+    detail: "통화별 합계",
+  };
+}
+
+function formatFeeAmount(value, currency = "KRW") {
+  const number = Number(value || 0);
+  if (!number) return `0 ${currency}`;
+  if (currency === "KRW") {
+    return `${moneyFormat.format(number)} KRW`;
+  }
+  return `${numberFormat.format(Number(number.toFixed(8)))} ${currency}`;
 }
 
 function tradeSideClass(trade) {
