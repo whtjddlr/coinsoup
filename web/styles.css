@@ -765,10 +765,50 @@ h1 {
 }
 
 .holding-head strong {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
   margin-top: 2px;
   color: #f8fafc;
   font-size: 22px;
+}
+
+.position-symbol {
+  display: grid;
+  gap: 4px;
+  min-width: 145px;
+}
+
+.position-symbol strong {
+  color: var(--text);
+}
+
+.position-side {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 22px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.position-side.long {
+  color: #86efac;
+  background: rgba(34, 197, 94, 0.16);
+}
+
+.position-side.short {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.16);
+}
+
+.position-side.spot {
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.16);
 }
 
 .holding-head b {
@@ -1694,7 +1734,7 @@ h1 {
 
 .trade-summary {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: 8px;
   padding: 12px 12px 0;
 }
@@ -1731,13 +1771,19 @@ h1 {
 }
 
 .trade-summary-card.buy strong,
+.trade-summary-card.long strong,
 .trade-summary-card.positive-card strong {
   color: #86efac;
 }
 
 .trade-summary-card.sell strong,
+.trade-summary-card.short strong,
 .trade-summary-card.negative-card strong {
   color: #fca5a5;
+}
+
+.trade-summary-card.spot strong {
+  color: #93c5fd;
 }
 
 .trade-cards {
@@ -1754,11 +1800,15 @@ h1 {
   padding: 10px;
 }
 
-.trade-card.buy {
+.trade-card.buy,
+.trade-card.long,
+.trade-card.long-close {
   border-color: rgba(34, 197, 94, 0.28);
 }
 
-.trade-card.sell {
+.trade-card.sell,
+.trade-card.short,
+.trade-card.short-close {
   border-color: rgba(239, 68, 68, 0.28);
 }
 
@@ -1837,14 +1887,29 @@ h1 {
 }
 
 .trade-side.buy,
+.trade-side.long,
+.trade-side.long-close,
 .trade-status.filled {
   color: #86efac;
   background: rgba(34, 197, 94, 0.16);
 }
 
-.trade-side.sell {
+.trade-side.sell,
+.trade-side.short,
+.trade-side.short-close {
   color: #fca5a5;
   background: rgba(239, 68, 68, 0.16);
+}
+
+.trade-side.spot {
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.16);
+}
+
+.trade-side.long-close,
+.trade-side.short-close {
+  border: 1px solid currentColor;
+  background: rgba(15, 23, 42, 0.66);
 }
 
 .trade-side.muted,

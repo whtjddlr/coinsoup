@@ -352,7 +352,7 @@ function renderSessionStrip(data) {
   setTone("sessionPnl", pnlTone);
   setTone("sessionPnlDetail", pnlTone);
   setText("sessionRealized", formatSignedMoney(realizedPnl, currency));
-  setText("sessionRealizedDetail", realizedPnl ? "매도 확정" : "매도 없음");
+  setText("sessionRealizedDetail", realizedPnl ? "청산/매도 확정" : "청산/매도 없음");
   setTone("sessionRealized", realizedTone);
   setTone("sessionRealizedDetail", realizedTone);
 
@@ -555,6 +555,7 @@ function renderDecision(asset, chartPayload = null) {
   const displayQuote = venueConfig[state.venue]?.quote || "KRW";
   const venueLevels = decisionLevelSource(asset, chartPayload);
   const displayPrice = venueLevels.current;
+  setText("decisionTitle", state.selected.exchange === "binance_futures" ? "롱/숏 판단" : "매수 판단");
   document.getElementById("chartTitle").textContent = state.selected.instrument;
   updateChartCaption(asset);
   document.getElementById("decisionMarket").textContent = `${state.selected.instrument} · ${assetMeta[asset.asset]?.korean || asset.asset}`;
@@ -975,7 +976,7 @@ function renderPortfolioOverview(portfolio, updatedAt = "", performance = null) 
   const realizedDetailEl = document.getElementById("overviewRealizedDetail");
   if (realizedDetailEl) {
     realizedDetailEl.className = `summary-return ${realizedClass}`;
-    realizedDetailEl.textContent = `${realizedPnl ? "매도 확정" : "매도 없음"} · 합산 ${formatSignedMoney(tradePnl, currency)}`;
+    realizedDetailEl.textContent = `${realizedPnl ? "청산/매도 확정" : "청산/매도 없음"} · 합산 ${formatSignedMoney(tradePnl, currency)}`;
   }
   setText("overviewEquity", formatCurrencyAmount(totalEquity, currency));
   const returnEl = document.getElementById("overviewReturn");
@@ -1064,15 +1065,16 @@ function holdingCard(position, totalEquity) {
   const realizedClass = realizedPnl >= 0 ? "positive" : "negative";
   const pnlTone = pnl > 0 ? "수익" : pnl < 0 ? "손실" : "보합";
   const displaySymbol = position.instrument.replace("KRW-", "").replace("USDT", "");
+  const sideInfo = positionSideInfo(position);
   const sideLabel = position.exchange === "binance_futures"
-    ? ` · ${position.side || "LONG"} ${formatLeverage(position.leverage || 1)}`
+    ? `<span class="position-side ${sideInfo.className}">${sideInfo.label} ${formatLeverage(position.leverage || 1)}</span>`
     : "";
   return `
     <article class="holding-card">
       <div class="holding-head">
         <div>
           <span>${position.exchange.toUpperCase()}</span>
-          <strong>${displaySymbol}${sideLabel}</strong>
+          <strong class="holding-symbol">${displaySymbol}${sideLabel}</strong>
         </div>
         <b class="${pnlClass}">${formatPct(pnlPct)}</b>
       </div>
@@ -1108,9 +1110,13 @@ function renderPositions(positions) {
     const average = Number(position.average_price || 0);
     const costBasis = Number(position.cost_basis || quantity * average || 0);
     const pnlPct = costBasis > 0 ? (Number(position.unrealized_pnl || 0) / costBasis) * 100 : 0;
+    const sideInfo = positionSideInfo(position);
+    const directionPill = position.exchange === "binance_futures"
+      ? `<span class="position-side ${sideInfo.className}">${sideInfo.label} ${formatLeverage(position.leverage || 1)}</span>`
+      : `<span class="position-side spot">현물</span>`;
     return `
       <tr>
-        <td>${position.exchange}:${position.instrument}</td>
+        <td><div class="position-symbol"><strong>${position.exchange}:${position.instrument}</strong>${directionPill}</div></td>
         <td>${formatQuantity(quantity)}</td>
         <td>${formatPrice(position.average_price)}</td>
         <td>${formatPrice(position.current_price)}</td>
@@ -1183,8 +1189,8 @@ function renderTrades(trades) {
   const cardsRoot = document.getElementById("tradeCards");
   const allTrades = trades || [];
   const filtered = allTrades.filter((trade) => {
-    if (state.tradeFilter === "all") return trade.status === "simulated";
-    return trade.status === "simulated" && trade.side === state.tradeFilter;
+    if (trade.status !== "simulated") return false;
+    return tradeMatchesFilter(trade);
   });
   renderTradeSummary(allTrades, summaryRoot);
 
@@ -1197,7 +1203,7 @@ function renderTrades(trades) {
         </div>
       `;
     }
-    body.innerHTML = `<tr><td colspan="9">기록 없음</td></tr>`;
+    body.innerHTML = `<tr><td colspan="10">기록 없음</td></tr>`;
     return;
   }
 
@@ -1213,48 +1219,58 @@ function renderTrades(trades) {
   }
 
   if (!filtered.length) {
-    body.innerHTML = `<tr><td colspan="9">${state.tradeFilter === "all" ? "체결된 가상 주문 없음" : "기록 없음"}</td></tr>`;
+    body.innerHTML = `<tr><td colspan="10">${state.tradeFilter === "all" ? "체결된 가상 주문 없음" : "기록 없음"}</td></tr>`;
     return;
   }
 
-  body.innerHTML = filtered.slice(0, 20).map((trade) => `
-    <tr>
-      <td>${shortTime(trade.timestamp).slice(5)}</td>
-      <td>${trade.instrument}</td>
-      <td><span class="trade-side ${tradeSideClass(trade)}">${translateTradeSide(trade)}</span></td>
-      <td>${tradeExecutedAmount(trade)}</td>
-      <td>${tradeFeeAmount(trade)}</td>
-      <td>${formatPrice(trade.effective_price || trade.price)}</td>
-      <td>${formatQuantity(trade.base_quantity)}</td>
-      <td><span class="trade-status ${tradeStatusClass(trade.status)}">${translateStatus(trade.status)}</span></td>
-      <td>
-        <div class="trade-table-reason">
-          <strong>${trade.decision_reason || translateNote(trade.note)}</strong>
-          ${trade.score_summary ? `<span>${trade.score_summary}</span>` : ""}
-          ${trade.exit_rule ? `<span>${trade.exit_rule}</span>` : ""}
-        </div>
-      </td>
-    </tr>
-  `).join("");
+  body.innerHTML = filtered.slice(0, 20).map((trade) => {
+    const kind = tradeKind(trade);
+    return `
+      <tr>
+        <td>${shortTime(trade.timestamp).slice(5)}</td>
+        <td>${trade.instrument}</td>
+        <td><span class="trade-side ${kind.directionClass}">${kind.directionLabel}</span></td>
+        <td><span class="trade-side ${kind.actionClass}">${kind.actionLabel}</span></td>
+        <td>${tradeExecutedAmount(trade)}</td>
+        <td>${tradeFeeAmount(trade)}</td>
+        <td>${formatPrice(trade.effective_price || trade.price)}</td>
+        <td>${formatQuantity(trade.base_quantity)}</td>
+        <td><span class="trade-status ${tradeStatusClass(trade.status)}">${translateStatus(trade.status)}</span></td>
+        <td>
+          <div class="trade-table-reason">
+            <strong>${trade.decision_reason || translateNote(trade.note)}</strong>
+            ${trade.score_summary ? `<span>${trade.score_summary}</span>` : ""}
+            ${trade.exit_rule ? `<span>${trade.exit_rule}</span>` : ""}
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join("");
 }
 
 function renderTradeSummary(trades, root) {
   if (!root) return;
   const simulated = trades.filter((trade) => trade.status === "simulated");
-  const buys = simulated.filter((trade) => trade.side === "buy" || isFuturesLongOpen(trade));
-  const sells = simulated.filter((trade) => trade.side === "sell" || isFuturesShortOpen(trade));
+  const longTrades = simulated.filter((trade) => tradeKind(trade).direction === "long");
+  const shortTrades = simulated.filter((trade) => tradeKind(trade).direction === "short");
+  const spotTrades = simulated.filter((trade) => tradeKind(trade).market === "spot");
   const realized = simulated.reduce((sum, trade) => sum + Number(trade.realized_pnl || 0), 0);
   const feeSummary = tradeFeeSummary(simulated);
   root.innerHTML = `
-    <div class="trade-summary-card buy">
-      <span>롱/매수</span>
-      <strong>${tradeAmountSummary(buys, "executed_quote_value")}</strong>
-      <b>${buys.length}건</b>
+    <div class="trade-summary-card long">
+      <span>롱</span>
+      <strong>${tradeAmountSummary(longTrades, "executed_quote_value")}</strong>
+      <b>${tradeDirectionCounts(longTrades)}</b>
     </div>
-    <div class="trade-summary-card sell">
-      <span>숏/매도</span>
-      <strong>${tradeAmountSummary(sells, "executed_quote_value")}</strong>
-      <b>${sells.length}건</b>
+    <div class="trade-summary-card short">
+      <span>숏</span>
+      <strong>${tradeAmountSummary(shortTrades, "executed_quote_value")}</strong>
+      <b>${tradeDirectionCounts(shortTrades)}</b>
+    </div>
+    <div class="trade-summary-card spot">
+      <span>현물</span>
+      <strong>${tradeAmountSummary(spotTrades, "executed_quote_value")}</strong>
+      <b>${spotTrades.length}건</b>
     </div>
     <div class="trade-summary-card ${realized >= 0 ? "positive-card" : "negative-card"}">
       <span>확정 손익</span>
@@ -1270,7 +1286,8 @@ function renderTradeSummary(trades, root) {
 }
 
 function renderTradeCard(trade) {
-  const sideClass = tradeSideClass(trade);
+  const kind = tradeKind(trade);
+  const sideClass = kind.cardClass;
   const statusClass = tradeStatusClass(trade.status);
   const isSkipped = trade.status === "skipped";
   const reason = trade.decision_reason || translateNote(trade.note);
@@ -1283,7 +1300,7 @@ function renderTradeCard(trade) {
           <span>${shortTime(trade.timestamp).slice(5)}</span>
           <strong>${trade.instrument}</strong>
         </div>
-        <span class="trade-side ${sideClass}">${translateTradeSide(trade)}</span>
+        <span class="trade-side ${kind.actionClass}">${kind.badgeLabel}</span>
       </div>
       <div class="trade-card-main">
         <strong>${tradeExecutedAmount(trade)}</strong>
@@ -1356,21 +1373,69 @@ function formatFeeAmount(value, currency = "KRW") {
   return `${numberFormat.format(Number(number.toFixed(8)))} ${currency}`;
 }
 
-function tradeSideClass(trade) {
-  if (trade.status === "skipped") return "muted";
-  return trade.side === "sell" ? "sell" : "buy";
+function tradeMatchesFilter(trade) {
+  if (state.tradeFilter === "all") return true;
+  const kind = tradeKind(trade);
+  if (state.tradeFilter === "spot") return kind.market === "spot";
+  return kind.market === "futures" && kind.direction === state.tradeFilter;
+}
+
+function tradeDirectionCounts(trades) {
+  const opened = trades.filter((trade) => tradeKind(trade).action === "open").length;
+  const closed = trades.filter((trade) => tradeKind(trade).action === "close").length;
+  if (opened || closed) return `진입 ${opened} · 청산 ${closed}`;
+  return `${trades.length}건`;
+}
+
+function tradeKind(trade) {
+  if (isFuturesTrade(trade)) {
+    const note = String(trade?.note || "");
+    const match = note.match(/paper futures (LONG|SHORT) (open|close)/);
+    const direction = futuresDirectionFromTrade(trade, match?.[1]);
+    const action = trade?.status === "skipped" ? "skip" : (match?.[2] || "open");
+    const directionLabel = direction === "short" ? "숏" : "롱";
+    const actionLabel = action === "close" ? "청산" : action === "skip" ? "안함" : "진입";
+    const actionClass = trade?.status === "skipped"
+      ? "muted"
+      : `${direction}${action === "close" ? "-close" : ""}`;
+    return {
+      market: "futures",
+      direction,
+      action,
+      directionLabel,
+      actionLabel,
+      badgeLabel: `${directionLabel} ${actionLabel}`,
+      directionClass: direction,
+      actionClass,
+      cardClass: actionClass,
+    };
+  }
+  const side = trade?.side === "sell" ? "sell" : "buy";
+  const skipped = trade?.status === "skipped";
+  return {
+    market: "spot",
+    direction: "spot",
+    action: skipped ? "skip" : side,
+    directionLabel: "현물",
+    actionLabel: skipped ? "안함" : side === "sell" ? "매도" : "매수",
+    badgeLabel: skipped ? `${side === "sell" ? "매도" : "매수"} 안함` : side === "sell" ? "매도" : "매수",
+    directionClass: "spot",
+    actionClass: skipped ? "muted" : side,
+    cardClass: skipped ? "muted" : side,
+  };
+}
+
+function futuresDirectionFromTrade(trade, noteDirection = "") {
+  if (noteDirection === "SHORT") return "short";
+  if (noteDirection === "LONG") return "long";
+  const enriched = String(trade?.position_direction || "");
+  if (enriched.includes("숏") || enriched.toUpperCase() === "SHORT") return "short";
+  if (enriched.includes("롱") || enriched.toUpperCase() === "LONG") return "long";
+  return trade?.side === "sell" ? "short" : "long";
 }
 
 function isFuturesTrade(trade) {
   return trade?.exchange === "binance_futures" || String(trade?.note || "").includes("paper futures");
-}
-
-function isFuturesLongOpen(trade) {
-  return isFuturesTrade(trade) && String(trade?.note || "").includes("paper futures LONG open");
-}
-
-function isFuturesShortOpen(trade) {
-  return isFuturesTrade(trade) && String(trade?.note || "").includes("paper futures SHORT open");
 }
 
 function tradeStatusClass(status) {
@@ -2197,6 +2262,13 @@ function positionSideLabel(position) {
   return String(position?.side || "LONG").toUpperCase() === "SHORT" ? "숏" : "롱";
 }
 
+function positionSideInfo(position) {
+  const side = String(position?.side || "SPOT").toUpperCase();
+  if (side === "SHORT") return { label: "숏", className: "short" };
+  if (side === "LONG") return { label: "롱", className: "long" };
+  return { label: "현물", className: "spot" };
+}
+
 function setupChartMeasurement(container) {
   if (state.measureReady) return;
   state.measureReady = true;
@@ -2560,30 +2632,6 @@ function formatClock(value) {
     return acc;
   }, {});
   return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
-}
-
-function translateSide(side) {
-  return side === "buy" ? "매수" : side === "sell" ? "매도" : side;
-}
-
-function translateTradeSide(trade) {
-  if (isFuturesTrade(trade)) {
-    const note = String(trade?.note || "");
-    const match = note.match(/paper futures (LONG|SHORT) (open|close)/);
-    const futuresSide = match?.[1] || (trade?.side === "sell" ? "SHORT" : "LONG");
-    const action = match?.[2] || "open";
-    if (trade?.status === "skipped") {
-      return futuresSide === "SHORT" ? "숏 안함" : "롱 안함";
-    }
-    if (action === "close") {
-      return futuresSide === "SHORT" ? "숏 청산" : "롱 청산";
-    }
-    return futuresSide === "SHORT" ? "숏 진입" : "롱 진입";
-  }
-  if (trade?.status === "skipped") {
-    return trade.side === "sell" ? "매도 안함" : "매수 안함";
-  }
-  return translateSide(trade?.side);
 }
 
 function translateStatus(status) {
