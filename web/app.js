@@ -374,7 +374,7 @@ function renderAssetCards(assets) {
             </div>
           </div>
           <span class="badge ${asset.asset_role}">${roleLabels[asset.asset_role] || asset.asset_role}</span>
-          <span class="badge ${asset.signal}">${signalLabels[asset.signal] || asset.signal}</span>
+          <span class="badge ${asset.signal}">${friendlySignalLabel(asset)}</span>
         </div>
         <div class="price">${formatPrice(displayPrice)}<span>${displayQuote}</span></div>
         <div class="asset-metrics">
@@ -412,7 +412,7 @@ function renderDecision(asset) {
   document.getElementById("chartTitle").textContent = state.selected.instrument;
   updateChartCaption(asset);
   document.getElementById("decisionMarket").textContent = `${state.selected.instrument} · ${assetMeta[asset.asset]?.korean || asset.asset}`;
-  document.getElementById("decisionSignal").textContent = signalLabels[asset.signal] || asset.signal;
+  document.getElementById("decisionSignal").textContent = friendlySignalLabel(asset);
   document.getElementById("decisionSummary").textContent = friendlyDecisionSummary(asset);
   document.getElementById("planCurrent").textContent = `${formatPrice(displayPrice)} ${displayQuote}`;
   const usdtKimchi = Number(asset.kimchi_premium_pct || 0);
@@ -512,21 +512,42 @@ function updateOrderFormForVenue() {
 
 function friendlyDecisionSummary(asset) {
   const name = assetMeta[asset.asset]?.korean || asset.asset;
+  const holding = hasAssetPosition(asset);
   const support = Number(asset.support_distance_pct || 0).toFixed(2);
   const resistance = Number(asset.resistance_distance_pct || 0).toFixed(2);
   if (asset.signal === "buy") {
-    return `${name}은 현재 조건이 맞아 모의 매수 대상으로 봅니다. 지지선까지 ${support}%, 저항선까지 ${resistance}% 남았습니다.`;
+    return holding
+      ? `${name}은 이미 보유 중이고, 조건이 맞아 추가 모의 매수도 가능한 자리입니다. 지지선까지 ${support}%, 저항선까지 ${resistance}% 남았습니다.`
+      : `${name}은 현재 조건이 맞아 모의 매수 대상으로 봅니다. 지지선까지 ${support}%, 저항선까지 ${resistance}% 남았습니다.`;
   }
   if (asset.signal === "watch") {
-    return `${name}은 일부 조건만 맞아서 조금 더 지켜봅니다. 지지선까지 ${support}% 남았고, 더 좋은 자리인지 확인 중입니다.`;
+    return holding
+      ? `${name}은 보유 중입니다. 다만 지금은 추가로 사기보다 조금 더 지켜보는 자리입니다.`
+      : `${name}은 일부 조건만 맞아서 조금 더 지켜봅니다. 지지선까지 ${support}% 남았고, 더 좋은 자리인지 확인 중입니다.`;
   }
   if (asset.signal === "skip") {
-    return `${name}은 지금 새로 사기보다 기다리는 쪽입니다. 지지선 반등이나 거래 힘이 더 확인되면 다시 후보가 됩니다.`;
+    return holding
+      ? `${name}은 보유 중입니다. 이 표시는 보유분을 팔라는 뜻이 아니라, 지금은 추가 매수를 기다린다는 뜻입니다.`
+      : `${name}은 지금 새로 사기보다 기다리는 쪽입니다. 지지선 반등이나 거래 힘이 더 확인되면 다시 후보가 됩니다.`;
   }
   if (asset.signal === "data_error") {
     return `${name}은 가격 데이터 확인이 필요합니다. 데이터가 다시 들어오면 판단을 갱신합니다.`;
   }
   return asset.reason_summary || "판단을 준비 중입니다.";
+}
+
+function hasAssetPosition(asset) {
+  const position = asset?.position || {};
+  return Number(position.quantity || 0) > 0 || Number(position.cost_basis || 0) > 0;
+}
+
+function friendlySignalLabel(asset) {
+  const holding = hasAssetPosition(asset);
+  if (asset.signal === "buy") return holding ? "보유 · 추가매수 가능" : "매수 가능";
+  if (asset.signal === "watch") return holding ? "보유 · 지켜보기" : "조금 더 보기";
+  if (asset.signal === "skip") return holding ? "보유 · 추가매수 대기" : "매수 대기";
+  if (asset.signal === "data_error") return "데이터 확인 필요";
+  return signalLabels[asset.signal] || asset.signal || "--";
 }
 
 function buildChecks(asset) {
@@ -539,7 +560,7 @@ function buildChecks(asset) {
   const marketState = regime === "bull" ? "pass" : regime === "neutral" ? "caution" : "fail";
   const marketTag = regime === "bull" ? "좋음" : regime === "neutral" ? "보통" : "불리";
   const signalState = asset.signal === "buy" ? "pass" : asset.signal === "watch" ? "caution" : "fail";
-  const signalTag = asset.signal === "buy" ? "매수 가능" : asset.signal === "watch" ? "조금 더 보기" : "대기";
+  const signalTag = friendlySignalLabel(asset).replace("보유 · ", "");
   const priceState = supportDistance <= 1.2 && resistanceDistance >= 0.5
     ? "pass"
     : supportDistance <= 2.2 && resistanceDistance >= 0.2 ? "caution" : "fail";
@@ -556,8 +577,8 @@ function buildChecks(asset) {
       tag: marketTag,
     },
     {
-      label: "자동 판단",
-      detail: "현재 규칙이 바로 살지, 더 기다릴지 정한 결과입니다.",
+      label: "추가 매수 판단",
+      detail: "보유분과 별개로, 지금 더 살지 기다릴지 보는 항목입니다.",
       state: signalState,
       tag: signalTag,
     },
