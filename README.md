@@ -235,11 +235,23 @@ python .\dryrun_bot.py --force
 1. Python 3.11 이상 설치
 2. 이 저장소를 clone
 3. PowerShell에서 저장소 폴더로 이동
-4. 아래 명령 실행
+4. 대시보드와 자동화 루프를 각각 실행
+
+```powershell
+git clone https://github.com/whtjddlr/coinsoup.git coinsoup
+cd .\coinsoup
+```
+
+첫 번째 PowerShell:
 
 ```powershell
 python .\paper_app.py --port 8788
-python .\automation_runner.py --loop --tasks due --duration-minutes 180
+```
+
+두 번째 PowerShell:
+
+```powershell
+python .\automation_runner.py --loop --tasks due
 ```
 
 대시보드:
@@ -249,6 +261,36 @@ http://127.0.0.1:8788
 ```
 
 기존 가상계좌 상태까지 옮기려면 `data/dryrun_state.json`, `data/paper_trades.csv`, `data/paper_equity.csv`를 별도로 복사합니다. 단, 일반적인 GitHub 공유에는 이 파일들을 올리지 않는 것을 권장합니다.
+
+## 다른 장소에서 Codex로 이어서 하기
+
+새 컴퓨터에서 Codex를 열 때 작업 폴더를 clone 받은 `coinsoup` 폴더로 선택합니다. 그런 다음 아래 순서로 진행합니다.
+
+1. `python .\paper_app.py --port 8788`로 대시보드 실행
+2. `python .\automation_runner.py --loop --tasks due`로 로컬 자동화 실행
+3. 브라우저에서 `http://127.0.0.1:8788` 열기
+4. Codex에 [docs/automation-prompts.md](docs/automation-prompts.md)의 프롬프트를 붙여넣기
+
+역할 분리는 계속 유지합니다.
+
+- 로컬 봇: 가격 수집, 차트 계산, 가상 주문, 손익/포지션 기록, 대시보드 업데이트
+- Codex: 관리감독, 로그/손익/포지션 해석, Binance 플러그인 기반 차트 재검토, 설정 변경 제안
+
+Codex는 실제 주문, API 키 변경, 출금, 레버리지 실주문을 하면 안 됩니다. 전략 설정 파일을 바꿀 때도 먼저 변경안을 요약하고 사용자 승인을 받아야 합니다.
+
+## 차트 화면 사용법
+
+차트 상단의 라인 버튼으로 화면 복잡도를 줄일 수 있습니다.
+
+- `평단`: 보유 포지션의 평균 진입가 확인선
+- `지지저항`: 현재 차트 기준 주요 지지선/저항선
+- `손절목표`: 모의 포지션의 손실 제한선과 수익 목표선
+- `매매`: 차트에 찍힌 가상 매수/매도/청산 마커
+- `이평`: EMA20, EMA50, MA200
+- `자석`: 지지/저항 주변 완충 구간
+- `보조선`: 추가 지지/저항 후보
+
+선물 모의투자에서는 `평단`과 `매매`를 켜두는 것이 가장 보기 쉽습니다. 숏 진입은 캔들 위 빨간 아래화살표, 롱/현물 매수는 캔들 아래 초록 위화살표, 청산은 노란 원형 마커로 표시됩니다.
 
 ## GitHub 업로드 예시
 
