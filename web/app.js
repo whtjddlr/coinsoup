@@ -1133,8 +1133,8 @@ function renderMultiTimeframe(payload) {
     return;
   }
 
-  subtitle.textContent = `${payload.instrument} · ${exchangeLabel(payload.exchange)} · 1/3/5/15분`;
-  score.textContent = `흐름 ${Number(payload.alignment_score || 0).toFixed(1)}`;
+  subtitle.textContent = `${payload.instrument} · 짧은 분봉을 같이 보는 참고판`;
+  score.textContent = `단타 환경 ${mtfScoreLabel(payload.alignment_score)}`;
   score.className = `mtf-score ${payload.alignment_score >= 75 ? "positive" : payload.alignment_score >= 55 ? "caution" : "negative"}`;
   grid.innerHTML = payload.timeframes.map((row) => {
     const changeClass = Number(row.change_pct) >= 0 ? "positive" : "negative";
@@ -1143,21 +1143,76 @@ function renderMultiTimeframe(payload) {
       <div class="mtf-card ${row.signal}">
         <div class="mtf-card-head">
           <strong>${row.label}</strong>
-          <span class="${signalClass}">${row.signal_label}</span>
+          <span class="${signalClass}">${friendlyMtfSignal(row)}</span>
         </div>
         <div class="mtf-price">${formatPrice(row.close)} <span class="${changeClass}">${formatPct(row.change_pct)}</span></div>
         <div class="mtf-stats">
-          <span>과열도 <b>${Number(row.rsi).toFixed(1)}</b></span>
-          <span>거래 힘 <b>${Number(row.volume_ratio).toFixed(2)}x</b></span>
-          <span>흔들림 <b>${Number(row.atr_pct).toFixed(2)}%</b></span>
-          <span>지지까지 <b>${Number(row.support_distance_pct).toFixed(2)}%</b></span>
-          <span>저항까지 <b>${Number(row.resistance_distance_pct).toFixed(2)}%</b></span>
-          <span>점수 <b>${row.score}</b></span>
+          <span>흐름 <b>${mtfTrendLabel(row)}</b></span>
+          <span>거래 힘 <b>${volumeStrengthLabel(row.volume_ratio)}</b></span>
+          <span>가격 위치 <b>${mtfLocationLabel(row)}</b></span>
+          <span>변동 <b>${volatilityLabel(row.atr_pct)}</b></span>
         </div>
-        <p>${row.reason || "조건 계산 중"}</p>
+        <p>${friendlyMtfReason(row)}</p>
       </div>
     `;
   }).join("");
+}
+
+function mtfScoreLabel(score) {
+  const value = Number(score || 0);
+  if (value >= 75) return "좋음";
+  if (value >= 55) return "관찰";
+  return "대기";
+}
+
+function friendlyMtfSignal(row) {
+  if (row.signal === "long-watch") return "매수 후보";
+  if (row.signal === "wait") return "조금 보기";
+  return "대기";
+}
+
+function mtfTrendLabel(row) {
+  const close = Number(row.close || 0);
+  const ema20 = Number(row.ema20 || 0);
+  const ema50 = Number(row.ema50 || 0);
+  if (close > ema20 && close > ema50) return "위로 도는 중";
+  if (close > ema20) return "짧게 반등";
+  return "아직 약함";
+}
+
+function volumeStrengthLabel(value) {
+  const ratio = Number(value || 0);
+  if (ratio >= 1.2) return "활발";
+  if (ratio >= 0.7) return "보통";
+  return "약함";
+}
+
+function mtfLocationLabel(row) {
+  const support = Number(row.support_distance_pct || 0);
+  const resistance = Number(row.resistance_distance_pct || 0);
+  if (resistance <= 0.25) return "저항 가까움";
+  if (support <= 0.25) return "지지 근처";
+  return "중간 구간";
+}
+
+function volatilityLabel(value) {
+  const pct = Number(value || 0);
+  if (pct >= 0.25) return "큼";
+  if (pct >= 0.08) return "보통";
+  return "작음";
+}
+
+function friendlyMtfReason(row) {
+  const trend = mtfTrendLabel(row);
+  const volume = volumeStrengthLabel(row.volume_ratio);
+  const location = mtfLocationLabel(row);
+  if (row.signal === "long-watch") {
+    return `${trend}, 거래 힘 ${volume}. 짧은 매수 후보로 볼 수 있습니다.`;
+  }
+  if (row.signal === "wait") {
+    return `${trend}, ${location}. 한두 조건을 더 확인합니다.`;
+  }
+  return `${trend}, 거래 힘 ${volume}. 지금은 단타 진입보다 대기 쪽입니다.`;
 }
 
 function addPriceLine(price, color, title) {
