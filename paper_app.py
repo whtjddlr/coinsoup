@@ -1100,10 +1100,10 @@ def chart_exit_orders(
     min_budget = Decimal(str(upbit_config.get("default_min_quote_budget", "5000")))
     fee_rate = Decimal(str(config.get("portfolio", {}).get("fee_rate", {}).get("upbit", "0")))
     slippage = Decimal(str(config.get("portfolio", {}).get("slippage_pct", {}).get("upbit", "0")))
-    take_profit_pct = Decimal(str(settings.get("chart_trade_take_profit_pct", "0.45")))
-    runner_take_profit_pct = Decimal(str(settings.get("chart_trade_runner_take_profit_pct", "1.2")))
-    stop_loss_pct = Decimal(str(settings.get("chart_trade_stop_loss_pct", "-1.0")))
-    hard_stop_loss_pct = Decimal(str(settings.get("chart_trade_hard_stop_loss_pct", "-2.0")))
+    take_profit_pct = Decimal(str(settings.get("chart_trade_take_profit_pct", "1.2")))
+    runner_take_profit_pct = Decimal(str(settings.get("chart_trade_runner_take_profit_pct", "2.4")))
+    stop_loss_pct = Decimal(str(settings.get("chart_trade_stop_loss_pct", "-1.6")))
+    hard_stop_loss_pct = Decimal(str(settings.get("chart_trade_hard_stop_loss_pct", "-3.0")))
     partial_fraction = Decimal(str(settings.get("chart_trade_partial_sell_fraction", "0.5")))
     asset_rows = {str(payload.get("asset", "")): list(payload.get("timeframes", [])) for payload in supervisor.get("assets", [])}
     asset_index = {asset["upbit"]: asset for asset in ASSETS}
