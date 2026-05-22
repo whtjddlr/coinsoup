@@ -196,7 +196,7 @@ function renderDashboard() {
   document.getElementById("updatedAt").textContent = shortTime(data.updated_at);
   renderFxRates(data);
   document.getElementById("sideRegime").textContent = regimeLabels[regime.name] || regime.label;
-  document.getElementById("sideRegimeReason").textContent = regime.reason;
+  document.getElementById("sideRegimeReason").textContent = compactRegimeText(regime);
   document.getElementById("sideRegimeIcon").textContent = regime.name === "bull" ? "상" : regime.name === "bear" ? "약" : "중";
   renderAutomationPolicy(data.automation);
   renderSupervisorStatus(data.supervisor);
@@ -228,9 +228,9 @@ function renderFxRates(data) {
     usdtEl.textContent = `USDT/KRW(업비트) ${usdtKrw > 0 ? formatPrice(usdtKrw) : "--"}`;
   }
   if (usdEl) {
-    const date = data?.usd_krw_reference_date ? ` · ${data.usd_krw_reference_date}` : "";
+    const date = data?.usd_krw_reference_date ? ` ${data.usd_krw_reference_date}` : "";
     usdEl.textContent = `USD/KRW(참고) ${usdKrw > 0 ? formatPrice(usdKrw) : "--"}`;
-    usdEl.title = `ECB 기준 참고 환율${date}. 실시간 은행 고시환율이 아닐 수 있습니다.`;
+    usdEl.title = `참고 환율${date}`;
   }
   if (basisEl) {
     basisEl.textContent = `차이 ${Number.isFinite(basis) ? formatPct(basis) : "--"}`;
@@ -261,6 +261,14 @@ function renderSupervisorStatus(supervisor) {
   setText("supervisorEvents", `${supervisor.event_count ?? 0}건 · ${friendlySeverity(severity)}`);
 }
 
+function compactRegimeText(regime = {}) {
+  const name = String(regime.name || "");
+  const volume = Number(regime.volume_ratio || 0);
+  const trend = name === "bull" ? "상승" : name === "bear" ? "약세" : name === "crash" ? "급락" : name === "overheated" ? "과열" : "중립";
+  const volumeText = volume >= 1 ? "거래 강함" : volume >= 0.5 ? "거래 보통" : "거래 약함";
+  return `${trend} · ${volumeText}`;
+}
+
 function renderSessionStrip(data) {
   const portfolio = data?.portfolio || {};
   const positions = portfolio.positions || [];
@@ -280,7 +288,7 @@ function renderSessionStrip(data) {
   const pnlTone = pnl >= 0 ? "positive" : "negative";
 
   setText("sessionEquity", totalEquity > 0 ? `${moneyFormat.format(Math.round(totalEquity))} KRW` : "--");
-  setText("sessionEquityDetail", positions.length ? `${positions.length}종목 보유 · 현금 ${moneyFormat.format(Math.round(cash))} KRW` : "보유 종목 없음");
+  setText("sessionEquityDetail", positions.length ? `${positions.length}종목 · 현금 ${moneyFormat.format(Math.round(cash))}` : "무보유");
   setText("sessionPnl", formatSignedMoney(pnl, "KRW"));
   setText("sessionPnlDetail", `시드 대비 ${formatPct(returnPct)}`);
   setTone("sessionPnl", pnlTone);
@@ -292,14 +300,14 @@ function renderSessionStrip(data) {
   const severity = String(supervisor.severity || "UNKNOWN");
   const supervisorTone = running ? (severity === "CRIT" ? "negative" : locked ? "caution" : "positive") : "negative";
   setText("sessionSupervisor", running ? (locked ? "감시 중 · 잠금" : "감시 중") : "확인 필요");
-  setText("sessionSupervisorDetail", supervisor.next_check_at ? `다음 ${timeOnly(supervisor.next_check_at)} · Codex 15분 요약` : "Codex 15분 요약");
+  setText("sessionSupervisorDetail", supervisor.next_check_at ? `다음 ${timeOnly(supervisor.next_check_at)} · Codex 15분` : "Codex 15분");
   setTone("sessionSupervisor", supervisorTone);
 
   const risk = data?.risk || {};
   const liveLocked = risk.live_trading_locked !== false;
   const withdrawalsOff = !risk.auto_withdrawals;
   setText("sessionSafety", liveLocked && withdrawalsOff ? "실거래 차단" : "확인 필요");
-  setText("sessionSafetyDetail", liveLocked ? "주문·출금 자동화 OFF" : "실거래 잠금 확인 필요");
+  setText("sessionSafetyDetail", liveLocked ? "주문 OFF · 출금 OFF" : "잠금 확인");
   setTone("sessionSafety", liveLocked && withdrawalsOff ? "positive" : "negative");
 }
 
@@ -342,48 +350,48 @@ function renderSettingsSummary(data) {
   const performance = data.performance || {};
   const groups = [
     {
-      title: "현재 운용 방식",
+      title: "운용",
       rows: [
         ["방식", friendlyStrategyName(profile.name)],
         ["상태", translatePhase(execution.current_phase || "dry-run")],
-        ["실거래 주문", risk.live_trading_locked ? "차단됨" : "열림"],
-        ["출금 자동화", risk.auto_withdrawals ? "켜짐" : "꺼짐"],
+        ["실거래", risk.live_trading_locked ? "차단" : "열림"],
+        ["출금", risk.auto_withdrawals ? "ON" : "OFF"],
       ],
     },
     {
-      title: "돈 배분 기준",
+      title: "배분",
       rows: [
         ["Upbit-KRW", `${book.upbit_pct ?? 60}%`],
         ["Binance-USDT", `${book.binance_pct ?? 40}%`],
         ["투자/대기", `${profile.spot_weight_pct ?? 88}% / ${profile.reserve_pct ?? 8}%`],
-        ["비중 맞추기", `${translateSchedule(rebalance.schedule)} · ${rebalance.drift_threshold_pct_points ?? 5}%p 차이 때`],
+        ["조정", `${translateSchedule(rebalance.schedule)} · ${rebalance.drift_threshold_pct_points ?? 5}%p`],
       ],
     },
     {
-      title: "주문 안전장치",
+      title: "주문",
       rows: [
-        ["기본 방식", translateOrderType(execution.default_order_type)],
-        ["위험 시 정리", translateOrderType(execution.emergency_exit_order_type)],
-        ["최소 금액 확인", execution.validate_min_order_before_submit ? "함" : "안 함"],
-        ["다시 시도 전 확인", execution.state_reconcile_before_retry ? "함" : "안 함"],
+        ["기본", translateOrderType(execution.default_order_type)],
+        ["위험", translateOrderType(execution.emergency_exit_order_type)],
+        ["최소금액", execution.validate_min_order_before_submit ? "ON" : "OFF"],
+        ["재시도", execution.state_reconcile_before_retry ? "ON" : "OFF"],
       ],
     },
     {
-      title: "선물 설정",
+      title: "선물",
       rows: [
-        ["상태", futures.enabled ? "켜짐" : "꺼짐"],
+        ["상태", futures.enabled ? "ON" : "OFF"],
         ["종목", (futures.symbols || ["BTCUSDT", "ETHUSDT"]).join(", ")],
-        ["위험 방식", `${translateMarginType(futures.margin_type)} · ${translatePositionMode(futures.position_mode)}`],
-        ["최대 한도", `${futures.max_leverage ?? 2}배 · 전체의 ${futures.gross_notional_cap_pct ?? 8}%`],
+        ["방식", `${translateMarginType(futures.margin_type)} · ${translatePositionMode(futures.position_mode)}`],
+        ["한도", `${futures.max_leverage ?? 2}배 · ${futures.gross_notional_cap_pct ?? 8}%`],
       ],
     },
     {
-      title: "자동 실행",
+      title: "자동화",
       rows: [
-        ["차트 분석", automation.chart_analysis || "15분마다"],
-        ["가격 구간", automation.support_resistance || "봉 마감 후"],
-        ["자동 주문", automation.paper_plan || "09:12"],
-        ["수익 자동 기록", `${performance.snapshot_count ?? 0}개`],
+        ["차트", automation.chart_analysis || "15분"],
+        ["구간", automation.support_resistance || "봉마감"],
+        ["주문", automation.paper_plan || "09:12"],
+        ["기록", `${performance.snapshot_count ?? 0}개`],
       ],
     },
   ];
@@ -496,7 +504,6 @@ function renderDecision(asset) {
       <span class="check-icon">${check.state === "pass" ? "✓" : check.state === "fail" ? "×" : "!"}</span>
       <span class="check-copy">
         <b>${check.label}</b>
-        ${check.detail ? `<small>${check.detail}</small>` : ""}
       </span>
       <span class="status-tag">${check.tag}</span>
     </div>
@@ -563,8 +570,8 @@ function updateOrderFormForVenue() {
   const note = document.getElementById("orderNote");
   if (!note) return;
   note.textContent = disabled
-    ? "바이낸스 선물은 보기 전용입니다. 실제 주문은 잠겨 있습니다."
-    : "모의투자입니다. 실제 거래소로 주문이 나가지 않습니다.";
+    ? "보기 전용"
+    : "실주문 없음";
 }
 
 function friendlyDecisionSummary(asset) {
@@ -572,25 +579,20 @@ function friendlyDecisionSummary(asset) {
   const holding = hasAssetPosition(asset);
   const support = Number(asset.support_distance_pct || 0).toFixed(2);
   const resistance = Number(asset.resistance_distance_pct || 0).toFixed(2);
+  const prefix = holding ? "보유" : "미보유";
   if (asset.signal === "buy") {
-    return holding
-      ? `${name}은 이미 보유 중이고, 조건이 맞아 추가 모의 매수도 가능한 자리입니다. 지지선까지 ${support}%, 저항선까지 ${resistance}% 남았습니다.`
-      : `${name}은 현재 조건이 맞아 모의 매수 대상으로 봅니다. 지지선까지 ${support}%, 저항선까지 ${resistance}% 남았습니다.`;
+    return `${prefix} · 매수 가능 · 지지 ${support}% · 저항 ${resistance}%`;
   }
   if (asset.signal === "watch") {
-    return holding
-      ? `${name}은 보유 중입니다. 다만 지금은 추가로 사기보다 조금 더 지켜보는 자리입니다.`
-      : `${name}은 일부 조건만 맞아서 조금 더 지켜봅니다. 지지선까지 ${support}% 남았고, 더 좋은 자리인지 확인 중입니다.`;
+    return `${prefix} · 관찰 · 지지 ${support}% · 저항 ${resistance}%`;
   }
   if (asset.signal === "skip") {
-    return holding
-      ? `${name}은 보유 중입니다. 이 표시는 보유분을 팔라는 뜻이 아니라, 지금은 추가 매수를 기다린다는 뜻입니다.`
-      : `${name}은 지금 새로 사기보다 기다리는 쪽입니다. 지지선 반등이나 거래 힘이 더 확인되면 다시 후보가 됩니다.`;
+    return `${prefix} · 대기 · 지지 ${support}% · 저항 ${resistance}%`;
   }
   if (asset.signal === "data_error") {
-    return `${name}은 가격 데이터 확인이 필요합니다. 데이터가 다시 들어오면 판단을 갱신합니다.`;
+    return `${name} · 데이터 확인`;
   }
-  return asset.reason_summary || "판단을 준비 중입니다.";
+  return "대기";
 }
 
 function hasAssetPosition(asset) {
@@ -628,32 +630,27 @@ function buildChecks(asset) {
     : rsi >= 65 || Math.abs(kimchi) >= 2 ? "caution" : "pass";
   return [
     {
-      label: "전체 시장 분위기",
-      detail: "BTC 기준으로 지금 시장이 매수하기 편한지 봅니다.",
+      label: "시장",
       state: marketState,
       tag: marketTag,
     },
     {
-      label: "추가 매수 판단",
-      detail: "보유분과 별개로, 지금 더 살지 기다릴지 보는 항목입니다.",
+      label: "판단",
       state: signalState,
       tag: signalTag,
     },
     {
-      label: "가격 위치",
-      detail: `지지선까지 ${supportDistance.toFixed(2)}%, 저항선까지 ${resistanceDistance.toFixed(2)}% 남았습니다.`,
+      label: "위치",
       state: priceState,
-      tag: priceTag,
+      tag: `${priceTag} · ${supportDistance.toFixed(2)}%`,
     },
     {
-      label: "거래 힘",
-      detail: `최근 거래량이 평소의 ${volumeRatio.toFixed(2)}배입니다.`,
+      label: "거래량",
       state: volumeState,
-      tag: volumeState === "pass" ? "충분" : volumeState === "caution" ? "약함" : "많이 약함",
+      tag: `${volumeRatio.toFixed(2)}x`,
     },
     {
-      label: "무리해서 사는 자리인지",
-      detail: `과열도 ${rsi.toFixed(1)}, 국내외 가격 차이 ${friendlyKimchiText(asset)} 기준입니다.`,
+      label: "과열",
       state: overheatState,
       tag: overheatState === "pass" ? "낮음" : overheatState === "caution" ? "주의" : "높음",
     },
@@ -709,8 +706,8 @@ function renderScalpChecks(asset) {
     </div>
   `).join("");
   note.textContent = scalp.enabled
-    ? `최대 ${scalp.max_hold_minutes}분만 들고 가며, 한 번에 전체의 ${scalp.position_cap_pct}%까지만 테스트합니다.`
-    : "수수료 확인 전에는 초단기 자동 주문을 막아둡니다.";
+    ? `${scalp.max_hold_minutes}분 · ${scalp.position_cap_pct}%`
+    : "잠금";
 }
 
 function renderEquity(rows) {
@@ -778,8 +775,8 @@ function renderPortfolioOverview(portfolio, updatedAt = "", performance = null) 
   if (!positions.length) {
     cards.innerHTML = `
       <div class="holding-empty">
-        <strong>아직 보유 포지션이 없습니다.</strong>
-        <span>차트 조건이 맞으면 모의 주문 결과가 여기에 표시됩니다.</span>
+        <strong>보유 없음</strong>
+        <span>조건 대기</span>
       </div>
     `;
     return;
@@ -909,7 +906,7 @@ function renderPerformance(performance) {
     <strong>${formatSignedMoney(total.pnl_krw, "KRW")}</strong>
     <em>${formatPct(total.return_pct)}</em>
   `;
-  document.getElementById("performanceNote").textContent = `${performance.conversion_note} · 자동 기록 ${performance.snapshot_count}개`;
+  document.getElementById("performanceNote").textContent = `KRW · 기록 ${performance.snapshot_count}개`;
 
   document.getElementById("bookReturns").innerHTML = (performance.books || []).map((book) => {
     const pnlClass = Number(book.pnl || 0) >= 0 ? "positive" : "negative";
@@ -948,7 +945,7 @@ function renderPerformance(performance) {
           </tr>
         `;
       }).join("")
-    : `<tr><td colspan="4">아직 시간별 수익을 계산할 자동 기록이 부족합니다.</td></tr>`;
+    : `<tr><td colspan="4">기록 부족</td></tr>`;
 }
 
 function renderTrades(trades) {
@@ -967,12 +964,12 @@ function renderTrades(trades) {
     if (cardsRoot) {
       cardsRoot.innerHTML = `
         <div class="trade-empty">
-          <strong>아직 매수/매도 기록이 없습니다.</strong>
-          <span>가상 주문이 실행되면 최근 기록이 여기에 카드로 표시됩니다.</span>
+          <strong>기록 없음</strong>
+          <span>가상 주문 대기</span>
         </div>
       `;
     }
-    body.innerHTML = `<tr><td colspan="8">아직 매수/매도 기록이 없습니다.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8">기록 없음</td></tr>`;
     return;
   }
 
@@ -981,14 +978,14 @@ function renderTrades(trades) {
       ? filtered.slice(0, 8).map(renderTradeCard).join("")
       : `
         <div class="trade-empty">
-          <strong>이 필터에 해당하는 기록이 없습니다.</strong>
-          <span>전체, 매수, 매도, 제외 필터를 바꿔서 확인해보세요.</span>
+          <strong>기록 없음</strong>
+          <span>필터 없음</span>
         </div>
       `;
   }
 
   if (!filtered.length) {
-    body.innerHTML = `<tr><td colspan="8">이 필터에 해당하는 기록이 없습니다.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8">기록 없음</td></tr>`;
     return;
   }
 
@@ -1027,14 +1024,14 @@ function renderTradeSummary(trades, root) {
       <b>${sells.length}건</b>
     </div>
     <div class="trade-summary-card ${realized >= 0 ? "positive-card" : "negative-card"}">
-      <span>매도로 확정된 손익</span>
+      <span>확정 손익</span>
       <strong>${formatSignedMoney(realized, "KRW")}</strong>
       <b>${sells.length ? "실현손익" : "매도 없음"}</b>
     </div>
     <div class="trade-summary-card muted-card">
       <span>제외</span>
       <strong>${skipped.length}건</strong>
-      <b>중복/조건 미충족</b>
+      <b>중복/조건</b>
     </div>
   `;
 }
@@ -1186,12 +1183,12 @@ function renderMultiTimeframe(payload) {
   if (!payload || !payload.timeframes?.length) {
     subtitle.textContent = "Binance 데이터 대기";
     score.textContent = "--";
-    grid.innerHTML = `<div class="mtf-empty">분봉 데이터를 불러오지 못했습니다.</div>`;
+    grid.innerHTML = `<div class="mtf-empty">분봉 없음</div>`;
     return;
   }
 
-  subtitle.textContent = `${payload.instrument} · 짧은 분봉을 같이 보는 참고판`;
-  score.textContent = `단타 환경 ${mtfScoreLabel(payload.alignment_score)}`;
+  subtitle.textContent = `${payload.instrument} · 분봉`;
+  score.textContent = mtfScoreLabel(payload.alignment_score);
   score.className = `mtf-score ${payload.alignment_score >= 75 ? "positive" : payload.alignment_score >= 55 ? "caution" : "negative"}`;
   grid.innerHTML = payload.timeframes.map((row) => {
     const changeClass = Number(row.change_pct) >= 0 ? "positive" : "negative";
@@ -1232,9 +1229,9 @@ function mtfTrendLabel(row) {
   const close = Number(row.close || 0);
   const ema20 = Number(row.ema20 || 0);
   const ema50 = Number(row.ema50 || 0);
-  if (close > ema20 && close > ema50) return "위로 도는 중";
-  if (close > ema20) return "짧게 반등";
-  return "아직 약함";
+  if (close > ema20 && close > ema50) return "상승";
+  if (close > ema20) return "반등";
+  return "약함";
 }
 
 function volumeStrengthLabel(value) {
@@ -1247,9 +1244,9 @@ function volumeStrengthLabel(value) {
 function mtfLocationLabel(row) {
   const support = Number(row.support_distance_pct || 0);
   const resistance = Number(row.resistance_distance_pct || 0);
-  if (resistance <= 0.25) return "저항 가까움";
-  if (support <= 0.25) return "지지 근처";
-  return "중간 구간";
+  if (resistance <= 0.25) return "저항";
+  if (support <= 0.25) return "지지";
+  return "중간";
 }
 
 function volatilityLabel(value) {
@@ -1263,13 +1260,7 @@ function friendlyMtfReason(row) {
   const trend = mtfTrendLabel(row);
   const volume = volumeStrengthLabel(row.volume_ratio);
   const location = mtfLocationLabel(row);
-  if (row.signal === "long-watch") {
-    return `${trend}, 거래 힘 ${volume}. 짧은 매수 후보로 볼 수 있습니다.`;
-  }
-  if (row.signal === "wait") {
-    return `${trend}, ${location}. 한두 조건을 더 확인합니다.`;
-  }
-  return `${trend}, 거래 힘 ${volume}. 지금은 단타 진입보다 대기 쪽입니다.`;
+  return `${trend} · ${volume} · ${location}`;
 }
 
 function addPriceLine(price, color, title) {
@@ -1826,7 +1817,7 @@ async function submitPaperOrder(event) {
 
 async function runDailyPlan() {
   const button = document.getElementById("runPlanBtn");
-  const confirmed = window.confirm("모의 계획을 지금 한 번 실행할까요? 실제 거래소 주문은 나가지 않습니다.");
+  const confirmed = window.confirm("모의 계획 실행? 실주문 없음.");
   if (!confirmed) return;
   const originalText = button?.textContent || "모의 계획 수동 실행";
   if (button) {
@@ -2020,15 +2011,15 @@ function translatePositionMode(mode = "") {
 }
 
 function translateNote(note = "") {
-  if (note.includes("paper buy")) return "가상 매수, 실제 주문 없음";
-  if (note.includes("paper sell")) return "가상 매도, 실제 주문 없음";
-  if (note.includes("no real order")) return "실제 주문 전송 없음";
-  if (note.includes("already simulated")) return "중복 방지로 제외";
+  if (note.includes("paper buy")) return "가상 매수";
+  if (note.includes("paper sell")) return "가상 매도";
+  if (note.includes("no real order")) return "실주문 없음";
+  if (note.includes("already simulated")) return "중복 제외";
   if (note.includes("below minimum")) return "최소금액 미만";
-  if (note.includes("insufficient virtual cash")) return "가상 현금 부족";
-  if (note.includes("insufficient virtual position")) return "가상 보유량 부족";
-  if (note.includes("no virtual position")) return "보유 포지션 없음";
-  if (note.includes("price unavailable")) return "가격 데이터 없음";
-  if (note.includes("insufficient")) return "잔고/보유량 부족";
+  if (note.includes("insufficient virtual cash")) return "현금 부족";
+  if (note.includes("insufficient virtual position")) return "보유 부족";
+  if (note.includes("no virtual position")) return "무보유";
+  if (note.includes("price unavailable")) return "가격 없음";
+  if (note.includes("insufficient")) return "잔고 부족";
   return note;
 }

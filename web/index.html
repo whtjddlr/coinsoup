@@ -23,9 +23,9 @@
           <button id="streamToggle" class="stream-pill on" type="button">
             실시간 <strong id="streamStatus">연결중</strong>
           </button>
-          <span id="usdtRate" class="pill fx-pill" title="업비트 KRW-USDT 시장 시세입니다. 국내외 가격 차이를 계산할 때 씁니다.">USDT/KRW(업비트) --</span>
-          <span id="usdRate" class="pill fx-pill muted-rate" title="ECB 기준 참고 환율입니다. 실시간 은행 고시환율이 아닐 수 있습니다.">USD/KRW(참고) --</span>
-          <span id="fxBasis" class="pill fx-basis" title="업비트 USDT/KRW와 USD/KRW 참고값의 차이입니다.">차이 --</span>
+          <span id="usdtRate" class="pill fx-pill" title="업비트 USDT">USDT/KRW(업비트) --</span>
+          <span id="usdRate" class="pill fx-pill muted-rate" title="참고 환율">USD/KRW(참고) --</span>
+          <span id="fxBasis" class="pill fx-basis" title="USDT-USD 차이">차이 --</span>
           <button id="refreshBtn" class="gear-btn" title="새로고침">↻</button>
         </div>
       </header>
@@ -92,7 +92,7 @@
             <div id="sideRegimeIcon" class="regime-icon">B</div>
             <div>
               <strong id="sideRegime">--</strong>
-              <p id="sideRegimeReason">시장 데이터를 불러오는 중입니다.</p>
+              <p id="sideRegimeReason">대기</p>
             </div>
           </div>
         </section>
@@ -110,21 +110,21 @@
         </section>
 
         <section class="mini-card">
-          <h3>로컬 감시 상태</h3>
+          <h3>로컬 감시</h3>
           <div class="small-list">
             <div><span>상태</span><b id="supervisorState" class="caution">확인 중</b></div>
-            <div><span>마지막 점검</span><b id="supervisorLast">--</b></div>
-            <div><span>다음 점검</span><b id="supervisorNext">--</b></div>
-            <div><span>위험 알림</span><b id="supervisorEvents">--</b></div>
+            <div><span>마지막</span><b id="supervisorLast">--</b></div>
+            <div><span>다음</span><b id="supervisorNext">--</b></div>
+            <div><span>알림</span><b id="supervisorEvents">--</b></div>
           </div>
         </section>
 
         <section class="mini-card">
           <h3>안전 한도</h3>
           <div class="small-list">
-            <div><span>하루 손실 제한</span><b id="riskDailyLimit">2.00%</b></div>
-            <div><span>7일 손실 제한</span><b id="riskWeeklyLimit">6.00%</b></div>
-            <div><span>기회 코인 한도</span><b id="riskAttackCap">30%</b></div>
+            <div><span>일 손실</span><b id="riskDailyLimit">2.00%</b></div>
+            <div><span>주 손실</span><b id="riskWeeklyLimit">6.00%</b></div>
+            <div><span>기회 한도</span><b id="riskAttackCap">30%</b></div>
             <div><span>실거래 차단</span><b id="riskLiveLock" class="positive">ON</b></div>
           </div>
         </section>
@@ -206,7 +206,7 @@
             <div class="allocation-head">
               <div>
                 <h2>실제 보유 배분</h2>
-                <p>현금과 코인별 평가 비중</p>
+                <p>현금 + 코인</p>
               </div>
               <span>Upbit KRW 기준</span>
             </div>
@@ -251,12 +251,12 @@
                 <div class="mtf-head">
                   <div>
                     <h3>짧은 시간 흐름</h3>
-                    <p id="mtfSubtitle">단타 진입 참고용입니다</p>
+                    <p id="mtfSubtitle">분봉</p>
                   </div>
                   <span id="mtfScore" class="mtf-score">--</span>
                 </div>
                 <div id="mtfGrid" class="mtf-grid"></div>
-                <p class="mtf-note">1분·3분·5분·15분이 같이 좋아질 때만 짧은 매수 후보로 봅니다.</p>
+                <p class="mtf-note">동시 강세만 후보</p>
               </div>
             </article>
 
@@ -264,7 +264,7 @@
               <div class="panel-head">
                 <div>
                   <h2>매수/매도 기록</h2>
-                  <p>모의 주문 기록입니다. 실제 주문은 나가지 않습니다.</p>
+                  <p>가상 기록</p>
                 </div>
                 <div class="log-actions">
                   <div class="segmented">
@@ -311,17 +311,17 @@
               <h3>1. 결론</h3>
               <div class="final-box">
                 <span id="decisionSignal" class="final-decision">--</span>
-                <p id="decisionSummary">데이터를 불러오는 중입니다.</p>
+                <p id="decisionSummary">대기</p>
               </div>
             </section>
 
             <section class="decision-section">
-              <h3>2. 쉽게 보는 추가 매수 판단</h3>
+              <h3>2. 조건</h3>
               <div id="checkList" class="check-list"></div>
             </section>
 
             <section class="decision-section">
-              <h3>3. 가격 구간</h3>
+              <h3>3. 가격</h3>
               <div class="risk-grid">
                 <span>현재가</span><strong id="planCurrent">--</strong>
                 <span>국내외 가격 차이</span><strong id="planKimchi">--</strong>
@@ -333,7 +333,7 @@
             </section>
 
             <section class="decision-section">
-              <h3>4. 참고 수치</h3>
+              <h3>4. 지표</h3>
               <div class="risk-grid">
                 <span>과열도</span><strong id="riskRsi">--</strong>
                 <span>흔들림</span><strong id="riskAtr">--</strong>
@@ -345,7 +345,7 @@
             </section>
 
             <section class="decision-section">
-              <h3>5. 수동 테스트 주문</h3>
+              <h3>5. 수동 주문</h3>
               <form id="paperOrderForm" class="order-form">
                 <label>
                   가상 주문 금액
@@ -355,14 +355,14 @@
                   <button type="submit" data-side="buy" class="buy-btn">매수</button>
                   <button type="submit" data-side="sell" class="sell-btn">25% 매도</button>
                 </div>
-                <p id="orderNote">모의투자입니다. 실제 거래소로 주문이 나가지 않습니다.</p>
+                <p id="orderNote">실주문 없음</p>
               </form>
             </section>
 
             <section class="decision-section">
-              <h3>6. 초단기 테스트 준비</h3>
+              <h3>6. 초단기</h3>
               <div id="scalpChecklist" class="check-list"></div>
-              <p id="scalpNote">수수료 확인 전에는 초단기 자동 주문을 막아둡니다.</p>
+              <p id="scalpNote">잠금</p>
             </section>
           </aside>
         </section>
@@ -371,7 +371,7 @@
           <div class="panel-head">
             <div>
               <h2>수익 현황</h2>
-              <p id="performanceNote">KRW 환산 기준 기간별 수익</p>
+              <p id="performanceNote">KRW 기준</p>
             </div>
             <div id="performanceTotal" class="performance-total">--</div>
           </div>
@@ -398,7 +398,7 @@
           <div class="panel-head">
             <div>
               <h2>포트폴리오</h2>
-              <p>현금, 보유수량, 평균단가, 평가손익</p>
+              <p>수량 · 손익</p>
             </div>
             <div id="equityRows" class="equity-rows"></div>
           </div>
@@ -425,7 +425,7 @@
           <div class="panel-head">
             <div>
               <h2>설정 요약</h2>
-              <p>현재 운용값과 주문 잠금 상태</p>
+              <p>운용값</p>
             </div>
           </div>
           <div class="settings-grid" id="settingsGrid"></div>
