@@ -197,7 +197,7 @@ function renderDashboard() {
 
   renderAssetCards(data.assets);
   renderDecision(selectedAsset());
-  renderPortfolioOverview(data.portfolio, data.updated_at);
+  renderPortfolioOverview(data.portfolio, data.updated_at, data.performance);
   renderEquity(data.portfolio.equity);
   renderPositions(data.portfolio.positions);
   renderPerformance(data.performance);
@@ -605,7 +605,7 @@ function renderEquity(rows) {
   `).join("");
 }
 
-function renderPortfolioOverview(portfolio, updatedAt = "") {
+function renderPortfolioOverview(portfolio, updatedAt = "", performance = null) {
   if (!portfolio) return;
   const positions = portfolio.positions || [];
   const equity = (portfolio.equity || [])[0] || {};
@@ -617,16 +617,37 @@ function renderPortfolioOverview(portfolio, updatedAt = "") {
     const average = Number(position.average_price || 0);
     return sum + Number(position.cost_basis || quantity * average || 0);
   }, 0);
-  const pnl = positionValue - costBasis;
-  const returnPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
-  const pnlClass = pnl >= 0 ? "positive" : "negative";
+  const positionPnl = positionValue - costBasis;
+  const total = performance?.total || {};
+  const totalPnl = Number.isFinite(Number(total.pnl_krw))
+    ? Number(total.pnl_krw)
+    : Number(equity.unrealized_pnl || positionPnl);
+  const returnPct = Number.isFinite(Number(total.return_pct))
+    ? Number(total.return_pct)
+    : costBasis > 0 ? (positionPnl / costBasis) * 100 : 0;
+  const pnlClass = totalPnl >= 0 ? "positive" : "negative";
+  const pnlTone = totalPnl > 0 ? "수익 중" : totalPnl < 0 ? "손실 중" : "손익 없음";
   const lastTick = state.stream.lastTickAt ? formatClock(state.stream.lastTickAt) : shortTime(updatedAt).slice(11, 19);
 
+  const pnlBox = document.getElementById("overviewPnlBox");
+  if (pnlBox) {
+    pnlBox.className = `summary-main pnl-focus ${pnlClass}`;
+  }
+  const pnlAmountEl = document.getElementById("overviewPnlAmount");
+  if (pnlAmountEl) {
+    pnlAmountEl.className = pnlClass;
+    pnlAmountEl.textContent = formatSignedMoney(totalPnl, "KRW");
+  }
+  const pnlDetailEl = document.getElementById("overviewPnlDetail");
+  if (pnlDetailEl) {
+    pnlDetailEl.className = `summary-return ${pnlClass}`;
+    pnlDetailEl.textContent = `${pnlTone} · ${formatPct(returnPct)}`;
+  }
   setText("overviewEquity", `${moneyFormat.format(Math.round(totalEquity))} KRW`);
   const returnEl = document.getElementById("overviewReturn");
   if (returnEl) {
-    returnEl.className = `summary-return ${pnlClass}`;
-    returnEl.textContent = `${formatSignedMoney(pnl, "KRW")} · ${formatPct(returnPct)}`;
+    returnEl.className = "summary-return";
+    returnEl.textContent = `시드 대비 ${formatPct(returnPct)}`;
   }
   setText("overviewCash", `${moneyFormat.format(Math.round(cash))} KRW`);
   setText("overviewInvested", `${moneyFormat.format(Math.round(positionValue))} KRW`);
@@ -656,6 +677,7 @@ function holdingCard(position, totalEquity) {
   const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
   const weight = totalEquity > 0 ? (value / totalEquity) * 100 : 0;
   const pnlClass = pnl >= 0 ? "positive" : "negative";
+  const pnlTone = pnl > 0 ? "수익" : pnl < 0 ? "손실" : "보합";
   const displaySymbol = position.instrument.replace("KRW-", "");
   return `
     <article class="holding-card">
@@ -668,7 +690,7 @@ function holdingCard(position, totalEquity) {
       </div>
       <div class="holding-value">
         <strong>${moneyFormat.format(Math.round(value))} KRW</strong>
-        <span class="${pnlClass}">${formatSignedMoney(pnl, "KRW")}</span>
+        <span class="${pnlClass}">${pnlTone} ${formatSignedMoney(pnl, "KRW")}</span>
       </div>
       <div class="holding-bars">
         <span style="width: ${Math.min(Math.max(weight, 0), 100)}%"></span>
@@ -702,7 +724,7 @@ function renderPositions(positions) {
         <td>${formatPrice(position.average_price)}</td>
         <td>${formatPrice(position.current_price)}</td>
         <td>${moneyFormat.format(position.value)}</td>
-        <td class="${pnlClass}">${moneyFormat.format(position.unrealized_pnl)}</td>
+        <td class="${pnlClass} pnl-cell">${formatSignedMoney(position.unrealized_pnl, "KRW")}</td>
         <td class="${pnlClass}">${formatPct(pnlPct)}</td>
         <td>${moneyFormat.format(costBasis)}</td>
       </tr>
@@ -1178,6 +1200,14 @@ function recalcRealtimeEquity() {
   row.position_value = positionValue;
   row.total_equity = cash + positionValue;
   row.unrealized_pnl = positionValue - costBasis;
+  const total = state.dashboard?.performance?.total;
+  if (total && Number.isFinite(Number(total.starting_equity_krw))) {
+    total.current_equity_krw = row.total_equity;
+    total.pnl_krw = row.total_equity - Number(total.starting_equity_krw);
+    total.return_pct = Number(total.starting_equity_krw) > 0
+      ? (total.pnl_krw / Number(total.starting_equity_krw)) * 100
+      : 0;
+  }
 }
 
 function scheduleRealtimeRender() {
@@ -1192,7 +1222,7 @@ function scheduleRealtimeRender() {
     });
     renderAssetCards(state.dashboard.assets);
     renderDecision(selectedAsset());
-    renderPortfolioOverview(state.dashboard.portfolio, state.dashboard.updated_at);
+    renderPortfolioOverview(state.dashboard.portfolio, state.dashboard.updated_at, state.dashboard.performance);
     renderEquity(state.dashboard.portfolio.equity || []);
     renderPositions(state.dashboard.portfolio.positions || []);
     updateStreamStatus();
