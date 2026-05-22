@@ -1074,6 +1074,17 @@ h1 {
   flex-wrap: wrap;
 }
 
+.line-toggle-group {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 3px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.32);
+}
+
 .tool-select-wrap {
   display: inline-flex;
   align-items: center;
@@ -1117,6 +1128,29 @@ h1 {
   border-color: rgba(59, 130, 246, 0.55);
   color: #bfdbfe;
   background: rgba(59, 130, 246, 0.13);
+}
+
+.line-toggle {
+  min-width: 76px;
+  justify-content: center;
+}
+
+.line-toggle.active[data-line-toggle="average"] {
+  border-color: rgba(250, 204, 21, 0.5);
+  color: #fde68a;
+  background: rgba(120, 53, 15, 0.2);
+}
+
+.line-toggle.active[data-line-toggle="levels"] {
+  border-color: rgba(34, 197, 94, 0.45);
+  color: #bbf7d0;
+  background: rgba(20, 83, 45, 0.18);
+}
+
+.line-toggle.active[data-line-toggle="trade"] {
+  border-color: rgba(248, 113, 113, 0.42);
+  color: #fecaca;
+  background: rgba(127, 29, 29, 0.16);
 }
 
 .tool-btn.scalp-only {
@@ -1243,6 +1277,61 @@ h1 {
   color: #bbf7d0;
   font-size: 12px;
   font-weight: 900;
+}
+
+.position-tag {
+  position: absolute;
+  left: 18px;
+  top: 16px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  max-width: calc(100% - 120px);
+  padding: 7px 9px;
+  border: 1px solid rgba(250, 204, 21, 0.38);
+  border-radius: 8px;
+  background: rgba(7, 11, 19, 0.86);
+  box-shadow: var(--shadow);
+  color: #fde68a;
+  font-size: 12px;
+  font-weight: 900;
+  backdrop-filter: blur(8px);
+}
+
+.position-tag.hidden {
+  display: none;
+}
+
+.position-tag span {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.position-tag.positive span {
+  color: #86efac;
+}
+
+.position-tag.negative span {
+  color: #fca5a5;
+}
+
+.position-tag.long {
+  border-color: rgba(34, 197, 94, 0.34);
+}
+
+.position-tag.short {
+  border-color: rgba(248, 113, 113, 0.36);
+}
+
+.position-tag.muted {
+  color: #cbd5e1;
+  border-color: rgba(148, 163, 184, 0.22);
+  background: rgba(15, 23, 42, 0.74);
+}
+
+.position-tag.muted span {
+  color: #94a3b8;
 }
 
 .line-legend {
@@ -2237,7 +2326,25 @@ th {
     font-size: 26px;
   }
 
+  .line-toggle-group {
+    width: 100%;
+  }
+
+  .line-toggle {
+    flex: 1 1 96px;
+    min-width: 0;
+  }
+
   .chart-wrap {
     height: 390px;
+  }
+
+  .position-tag {
+    left: 12px;
+    top: 12px;
+    max-width: calc(100% - 72px);
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
   }
 }

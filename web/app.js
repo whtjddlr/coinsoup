@@ -8,7 +8,16 @@ const state = {
   lineSeries: [],
   priceLines: [],
   chartPayload: null,
-  showIndicators: true,
+  showIndicators: false,
+  lineVisibility: {
+    average: true,
+    levels: true,
+    trade: true,
+    ma: false,
+    magnet: false,
+    extra: false,
+    metrics: true,
+  },
   maSpreadPair: "ema20:ema50",
   scalpMode: false,
   measure: { start: null, end: null },
@@ -84,6 +93,56 @@ const maSpreadPairs = [
   { value: "ema50:ma200", label: "EMA50↔MA200" },
 ];
 
+const defaultLineVisibility = {
+  average: true,
+  levels: true,
+  trade: true,
+  ma: false,
+  magnet: false,
+  extra: false,
+  metrics: true,
+};
+
+const lineToggleText = {
+  average: { on: "평단 ON", off: "평단 OFF" },
+  levels: { on: "지지저항 ON", off: "지지저항 OFF" },
+  trade: { on: "손절목표 ON", off: "손절목표 OFF" },
+  ma: { on: "이평 ON", off: "이평 OFF" },
+  magnet: { on: "자석 ON", off: "자석 OFF" },
+  extra: { on: "보조선 ON", off: "보조선 OFF" },
+};
+
+function restoreLineVisibility() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("coinsoup.lineVisibility") || "{}");
+    Object.keys(defaultLineVisibility).forEach((key) => {
+      state.lineVisibility[key] = typeof saved[key] === "boolean" ? saved[key] : defaultLineVisibility[key];
+    });
+  } catch {
+    state.lineVisibility = { ...defaultLineVisibility };
+  }
+  state.showIndicators = lineVisible("ma");
+}
+
+function saveLineVisibility() {
+  try {
+    localStorage.setItem("coinsoup.lineVisibility", JSON.stringify(state.lineVisibility));
+  } catch {
+    // 저장이 막힌 브라우저에서는 현재 화면 상태만 유지합니다.
+  }
+}
+
+function lineVisible(key) {
+  return state.lineVisibility?.[key] !== false;
+}
+
+function setLineVisibility(key, visible) {
+  if (!(key in defaultLineVisibility)) return;
+  state.lineVisibility[key] = Boolean(visible);
+  state.showIndicators = lineVisible("ma");
+  saveLineVisibility();
+}
+
 function restoreMaSpreadPair() {
   try {
     const saved = localStorage.getItem("coinsoup.maSpreadPair");
@@ -138,6 +197,7 @@ const venueConfig = {
 
 document.addEventListener("DOMContentLoaded", () => {
   restoreMaSpreadPair();
+  restoreLineVisibility();
   document.getElementById("refreshBtn").addEventListener("click", loadDashboard);
   document.getElementById("decisionRefresh").addEventListener("click", loadDashboard);
   document.getElementById("runPlanBtn").addEventListener("click", runDailyPlan);
@@ -155,21 +215,24 @@ document.addEventListener("DOMContentLoaded", () => {
   document.querySelectorAll(".exchange-tabs .tab[data-venue]").forEach((button) => {
     button.addEventListener("click", () => switchVenue(button.dataset.venue));
   });
-  document.getElementById("indicatorToggle").addEventListener("click", () => {
-    state.showIndicators = !state.showIndicators;
-    updateIndicatorToggle();
-    if (state.chartPayload) renderChart(state.chartPayload);
-    if (state.dashboard) renderSettingsSummary(state.dashboard);
+  document.querySelectorAll("[data-line-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.dataset.lineToggle;
+      setLineVisibility(key, !lineVisible(key));
+      updateIndicatorToggle();
+      if (state.chartPayload) renderChart(state.chartPayload);
+      if (state.dashboard) renderSettingsSummary(state.dashboard);
+    });
   });
   const maSpreadSelect = document.getElementById("maSpreadPair");
   if (maSpreadSelect) {
     maSpreadSelect.value = state.maSpreadPair;
     maSpreadSelect.addEventListener("change", () => {
       setMaSpreadPair(maSpreadSelect.value || "ema20:ema50");
-      if (!state.showIndicators) {
-        state.showIndicators = true;
-        updateIndicatorToggle();
+      if (!lineVisible("ma")) {
+        setLineVisibility("ma", true);
       }
+      updateIndicatorToggle();
       if (state.chartPayload) renderChart(state.chartPayload);
       renderDecision(selectedAsset(), state.chartPayload);
       if (state.dashboard) renderSettingsSummary(state.dashboard);
@@ -469,7 +532,7 @@ function renderSettingsSummary(data) {
       title: "차트",
       rows: [
         ["이평 폭", selectedMaSpreadPair().label],
-        ["보조선", state.showIndicators ? "표시" : "숨김"],
+        ["라인", chartLineSummary()],
         ["비교", "위/아래 · 폭"],
         ["저장", "새로고침 유지"],
       ],
@@ -707,9 +770,25 @@ function levelRangeText(support, resistance) {
 }
 
 function updateIndicatorToggle() {
-  const button = document.getElementById("indicatorToggle");
-  button.textContent = state.showIndicators ? "보조선 숨김" : "보조선 보기";
-  button.classList.toggle("active", state.showIndicators);
+  document.querySelectorAll("[data-line-toggle]").forEach((button) => {
+    const key = button.dataset.lineToggle;
+    const visible = lineVisible(key);
+    button.textContent = lineToggleText[key]?.[visible ? "on" : "off"] || button.textContent;
+    button.classList.toggle("active", visible);
+    button.setAttribute("aria-pressed", visible ? "true" : "false");
+  });
+}
+
+function chartLineSummary() {
+  const labels = [
+    ["average", "평단"],
+    ["levels", "지지"],
+    ["trade", "손절"],
+    ["ma", "이평"],
+    ["magnet", "자석"],
+    ["extra", "보조"],
+  ];
+  return labels.filter(([key]) => lineVisible(key)).map(([, label]) => label).join(", ") || "전체 숨김";
 }
 
 function toggleScalpMode() {
@@ -1518,7 +1597,7 @@ function renderChart(payload) {
   state.candleSeries.setData(payload.candles);
 
   const colors = { ema20: "#3b82f6", ema50: "#f59e0b", ma200: "#8b5cf6" };
-  if (state.showIndicators) {
+  if (lineVisible("ma")) {
     ["ema20", "ema50", "ma200"].forEach((key) => {
       const series = state.chart.addLineSeries({ color: colors[key], lineWidth: key === "ma200" ? 1 : 2 });
       series.setData(payload.lines[key].map((point, index) => ({ time: payload.candles[index]?.time, value: point.value })).filter((point) => point.time));
@@ -1529,16 +1608,22 @@ function renderChart(payload) {
   const asset = selectedAsset();
   const position = positionForAsset(asset, payload);
   const tradeLines = displayTradeLinesForChart(payload, position);
-  addMagnetLines(payload);
-  addExtraLevelLines(payload);
-  addPriceLine(payload.lines.support, "#22c55e", "지지", { lineWidth: 2 });
-  addPriceLine(payload.lines.resistance, "#ef4444", "저항", { lineWidth: 2 });
-  addPriceLine(tradeLines.stopLoss, "#ef4444", "손절");
-  tradeLines.targets
-    .slice(0, state.showIndicators ? 2 : 1)
-    .forEach((price, index) => addPriceLine(price, "#86efac", `목표${index + 1}`));
+  if (lineVisible("magnet")) addMagnetLines(payload);
+  if (lineVisible("extra")) addExtraLevelLines(payload);
+  if (lineVisible("levels")) {
+    addPriceLine(payload.lines.support, "#22c55e", "지지", { lineWidth: 2 });
+    addPriceLine(payload.lines.resistance, "#ef4444", "저항", { lineWidth: 2 });
+  }
+  if (lineVisible("trade")) {
+    addPriceLine(tradeLines.stopLoss, "#ef4444", "손절");
+    tradeLines.targets
+      .slice(0, lineVisible("ma") ? 2 : 1)
+      .forEach((price, index) => addPriceLine(price, "#86efac", `목표${index + 1}`));
+  }
   const averagePrice = averagePriceForChart(asset, payload, position);
-  addPriceLine(averagePrice, "#facc15", "평단", { lineWidth: 2, lineStyle: 1 });
+  if (lineVisible("average")) {
+    addPriceLine(averagePrice, "#facc15", "평단", { lineWidth: 2, lineStyle: 1 });
+  }
   state.chart.timeScale().fitContent();
   document.getElementById("priceTag").textContent = formatPrice(payload.indicators.close);
   renderLineLegend(payload, { position, tradeLines, averagePrice });
@@ -2192,7 +2277,7 @@ function renderLineLegend(payload, context = {}) {
     position,
   });
   const maSpread = maSpreadSummary(payload);
-  const indicatorLegend = state.showIndicators
+  const indicatorLegend = lineVisible("ma")
     ? `
       <span class="legend-chip ema20" title="20봉 지수이동평균선">EMA20</span>
       <span class="legend-chip ema50" title="50봉 지수이동평균선">EMA50</span>
@@ -2200,18 +2285,24 @@ function renderLineLegend(payload, context = {}) {
     `
     : "";
   document.getElementById("lineLegend").innerHTML = `
-    <span class="legend-chip support" title="가격 아래의 주요 지지 구간">지지 ${formatPrice(support)} (${Number(payload.levels.support_distance_pct).toFixed(2)}%)</span>
-    <span class="legend-chip magnet" title="지지/저항 주변에서 가격이 머뭇거리기 쉬운 구간">자석 ${formatPctPlain(magnetPct)}%</span>
-    <span class="legend-chip resistance" title="가격 위의 주요 저항 구간">저항 ${formatPrice(resistance)} (${Number(payload.levels.resistance_distance_pct).toFixed(2)}%)</span>
-    <span class="legend-chip stop" title="손실이 커지기 전에 정리하는 기준가">손절 ${formatPrice(stopLoss)}</span>
-    <span class="legend-chip target" title="일부 수익을 챙길 수 있는 목표가">목표1 ${formatPrice(takeProfit[0])}</span>
-    ${state.showIndicators && takeProfit[1] ? `<span class="legend-chip target" title="두 번째 수익 목표가">목표2 ${formatPrice(takeProfit[1])}</span>` : ""}
-    ${averagePrice ? `<span class="legend-chip average" title="현재 모의 보유 평균 진입가">평단 ${formatPrice(averagePrice)}</span>` : ""}
+    ${lineVisible("levels") ? `
+      <span class="legend-chip support" title="가격 아래의 주요 지지 구간">지지 ${formatPrice(support)} (${Number(payload.levels.support_distance_pct).toFixed(2)}%)</span>
+      <span class="legend-chip resistance" title="가격 위의 주요 저항 구간">저항 ${formatPrice(resistance)} (${Number(payload.levels.resistance_distance_pct).toFixed(2)}%)</span>
+    ` : ""}
+    ${lineVisible("magnet") ? `<span class="legend-chip magnet" title="지지/저항 주변에서 가격이 머뭇거리기 쉬운 구간">자석 ${formatPctPlain(magnetPct)}%</span>` : ""}
+    ${lineVisible("trade") ? `
+      <span class="legend-chip stop" title="손실이 커지기 전에 정리하는 기준가">손절 ${formatPrice(stopLoss)}</span>
+      <span class="legend-chip target" title="일부 수익을 챙길 수 있는 목표가">목표1 ${formatPrice(takeProfit[0])}</span>
+      ${lineVisible("ma") && takeProfit[1] ? `<span class="legend-chip target" title="두 번째 수익 목표가">목표2 ${formatPrice(takeProfit[1])}</span>` : ""}
+    ` : ""}
+    ${lineVisible("average") && averagePrice ? `<span class="legend-chip average" title="현재 모의 보유 평균 진입가">평단 ${formatPrice(averagePrice)}</span>` : ""}
     ${indicatorLegend}
-    <span class="legend-chip muted-chip">과열도 ${Number(payload.indicators.rsi).toFixed(1)}</span>
-    <span class="legend-chip muted-chip">흔들림 ${Number(payload.indicators.atr_pct).toFixed(2)}%</span>
-    <span class="legend-chip muted-chip">거래 힘 ${Number(payload.indicators.volume_ratio).toFixed(2)}x</span>
-    ${maSpread ? `<div class="ma-spread-grid">
+    ${lineVisible("metrics") ? `
+      <span class="legend-chip muted-chip">과열도 ${Number(payload.indicators.rsi).toFixed(1)}</span>
+      <span class="legend-chip muted-chip">흔들림 ${Number(payload.indicators.atr_pct).toFixed(2)}%</span>
+      <span class="legend-chip muted-chip">거래 힘 ${Number(payload.indicators.volume_ratio).toFixed(2)}x</span>
+    ` : ""}
+    ${lineVisible("ma") && maSpread ? `<div class="ma-spread-grid">
       <span class="ma-spread-item"><b>이평 위</b>${maSpread.upperLabel} ${formatPrice(maSpread.upperValue)}</span>
       <span class="ma-spread-item"><b>이평 아래</b>${maSpread.lowerLabel} ${formatPrice(maSpread.lowerValue)}</span>
       <span class="ma-spread-item accent"><b>이평 폭</b>${formatPctPlain(maSpread.gapPct)}%</span>
@@ -2223,38 +2314,71 @@ function renderLineLegend(payload, context = {}) {
       <span class="line-gap ${item.tone}"><b>${item.label}</b>${item.value}</span>
     `).join("")}</div>` : ""}
   `;
+  renderPositionTag(payload, position, averagePrice);
+}
+
+function renderPositionTag(payload, position, averagePrice) {
+  const tag = document.getElementById("positionTag");
+  if (!tag) return;
+  const current = Number(payload?.indicators?.close || position?.current_price || 0);
+  if (!lineVisible("average")) {
+    tag.className = "position-tag hidden";
+    tag.innerHTML = "";
+    return;
+  }
+  if (!position || averagePrice <= 0) {
+    tag.className = "position-tag muted";
+    tag.innerHTML = `
+      <strong>평단 없음</strong>
+      <span>보유 없음</span>
+    `;
+    return;
+  }
+  if (current <= 0) {
+    tag.className = "position-tag hidden";
+    tag.innerHTML = "";
+    return;
+  }
+  const sideInfo = positionSideInfo(position);
+  const move = sideAwareMovePct(position, averagePrice, current);
+  const leverage = position.exchange === "binance_futures" ? ` ${formatLeverage(position.leverage || 1)}` : "";
+  tag.className = `position-tag ${sideInfo.className} ${pctToneClass(move)}`;
+  tag.innerHTML = `
+    <strong>평단 ${formatPrice(averagePrice)}</strong>
+    <span>${sideInfo.label}${leverage} · 현재 ${formatPct(move)}</span>
+  `;
 }
 
 function lineGapItems({ current, averagePrice, support, resistance, stopLoss, target, position }) {
   const items = [];
-  if (position && averagePrice > 0 && current > 0) {
+  if (lineVisible("average") && position && averagePrice > 0 && current > 0) {
     const move = sideAwareMovePct(position, averagePrice, current);
     items.push({ label: `${positionSideLabel(position)} 손익폭`, value: formatPct(move), tone: pctToneClass(move) });
-  } else if (averagePrice > 0 && current > 0) {
+  } else if (lineVisible("average") && averagePrice > 0 && current > 0) {
     const move = rawMovePct(averagePrice, current);
     items.push({ label: "현재↔평단", value: formatPct(move), tone: pctToneClass(move) });
   }
-  if (position && averagePrice > 0 && target > 0) {
+  if (lineVisible("trade") && position && averagePrice > 0 && target > 0) {
     const move = sideAwareMovePct(position, averagePrice, target);
     items.push({ label: "평단→목표", value: formatPct(move), tone: pctToneClass(move) });
-  } else if (averagePrice > 0 && target > 0) {
+  } else if (lineVisible("trade") && averagePrice > 0 && target > 0) {
     const move = rawMovePct(averagePrice, target);
     items.push({ label: "평단→목표", value: formatPct(move), tone: pctToneClass(move) });
   }
-  if (position && averagePrice > 0 && stopLoss > 0) {
+  if (lineVisible("trade") && position && averagePrice > 0 && stopLoss > 0) {
     const move = sideAwareMovePct(position, averagePrice, stopLoss);
     items.push({ label: "평단→손절", value: formatPct(move), tone: pctToneClass(move) });
-  } else if (averagePrice > 0 && stopLoss > 0) {
+  } else if (lineVisible("trade") && averagePrice > 0 && stopLoss > 0) {
     const move = rawMovePct(averagePrice, stopLoss);
     items.push({ label: "평단→손절", value: formatPct(move), tone: pctToneClass(move) });
   }
-  if (support > 0 && resistance > 0) {
+  if (lineVisible("levels") && support > 0 && resistance > 0) {
     items.push({ label: "지지~저항 높이", value: levelRangeText(support, resistance), tone: "neutral" });
   }
-  if (current > 0 && support > 0) {
+  if (lineVisible("levels") && current > 0 && support > 0) {
     items.push({ label: "현재→지지", value: formatPct(rawMovePct(current, support)), tone: pctToneClass(rawMovePct(current, support)) });
   }
-  if (current > 0 && resistance > 0) {
+  if (lineVisible("levels") && current > 0 && resistance > 0) {
     items.push({ label: "현재→저항", value: formatPct(rawMovePct(current, resistance)), tone: pctToneClass(rawMovePct(current, resistance)) });
   }
   return items.slice(0, 6);
@@ -2372,24 +2496,33 @@ function snapPointToCandle(rawX, rawY, rawPrice, rawTime) {
 function chartLineSnapCandidates(index) {
   const payload = state.chartPayload || {};
   const lines = payload.lines || {};
-  const maCandidates = ["ema20", "ema50", "ma200"].map((key) => {
-    const value = Number(lines[key]?.[index]?.value || 0);
-    return {
-      label: maLineLabels[key] || key.toUpperCase(),
-      price: value,
-    };
-  });
+  const maCandidates = lineVisible("ma")
+    ? ["ema20", "ema50", "ma200"].map((key) => {
+      const value = Number(lines[key]?.[index]?.value || 0);
+      return {
+        label: maLineLabels[key] || key.toUpperCase(),
+        price: value,
+      };
+    })
+    : [];
   const asset = selectedAsset();
   const position = positionForAsset(asset, payload);
   const tradeLines = displayTradeLinesForChart(payload, position);
   const averagePrice = averagePriceForChart(asset, payload, position);
-  const staticCandidates = [
-    { label: "평단", price: averagePrice },
-    { label: "지지", price: Number(payload.levels?.support || lines.support || 0) },
-    { label: "저항", price: Number(payload.levels?.resistance || lines.resistance || 0) },
-    { label: "손절", price: Number(tradeLines.stopLoss || lines.stop_loss || 0) },
-    { label: "목표1", price: Number((tradeLines.targets || lines.take_profit || [])[0] || 0) },
-  ];
+  const staticCandidates = [];
+  if (lineVisible("average")) staticCandidates.push({ label: "평단", price: averagePrice });
+  if (lineVisible("levels")) {
+    staticCandidates.push(
+      { label: "지지", price: Number(payload.levels?.support || lines.support || 0) },
+      { label: "저항", price: Number(payload.levels?.resistance || lines.resistance || 0) },
+    );
+  }
+  if (lineVisible("trade")) {
+    staticCandidates.push(
+      { label: "손절", price: Number(tradeLines.stopLoss || lines.stop_loss || 0) },
+      { label: "목표1", price: Number((tradeLines.targets || lines.take_profit || [])[0] || 0) },
+    );
+  }
   return [...maCandidates, ...staticCandidates];
 }
 
