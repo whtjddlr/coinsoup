@@ -292,6 +292,7 @@ def build_dashboard() -> dict[str, Any]:
         "market_regime": btc_regime,
         "strategy_profile": strategy_profile_payload(config),
         "automation": automation_policy_payload(config),
+        "supervisor": supervisor_payload(config, now),
         "book_policy": book_policy_payload(config),
         "execution_policy": execution_policy_payload(config),
         "deployment": {
@@ -333,6 +334,38 @@ def strategy_profile_payload(config: dict[str, Any]) -> dict[str, Any]:
         "futures": f"{', '.join(futures.get('symbols', ['BTCUSDT', 'ETHUSDT']))}, {futures.get('margin_type', 'isolated')}, max {futures.get('max_leverage', 2)}x, order router locked",
         },
         "scalp_lab": {**STRATEGY_PROFILE["scalp_lab"], **strategy.get("scalp_lab", {})},
+    }
+
+
+def supervisor_payload(config: dict[str, Any], now: datetime) -> dict[str, Any]:
+    settings = config.get("strategy", {}).get("automation", {})
+    interval = int(settings.get("supervisor_refresh_minutes", 5))
+    status = read_supervisor_status()
+    updated_raw = str(status.get("updated_at", ""))
+    updated_at: datetime | None = None
+    age_seconds: float | None = None
+    if updated_raw:
+        try:
+            parsed = datetime.fromisoformat(updated_raw)
+            updated_at = parsed if parsed.tzinfo else parsed.replace(tzinfo=KST)
+            age_seconds = max((now - updated_at).total_seconds(), 0)
+        except ValueError:
+            updated_at = None
+
+    healthy = bool(status.get("ok")) and age_seconds is not None and age_seconds <= max(interval * 2 * 60, 180)
+    next_at = updated_at + timedelta(minutes=interval) if updated_at else None
+    events = status.get("events") if isinstance(status.get("events"), list) else []
+    return {
+        "ok": bool(status.get("ok")),
+        "running": healthy,
+        "state": "running" if healthy else "stale",
+        "severity": status.get("severity", "UNKNOWN") if status else "UNKNOWN",
+        "updated_at": updated_raw,
+        "age_seconds": round(age_seconds or 0),
+        "refresh_minutes": interval,
+        "next_check_at": next_at.isoformat(timespec="minutes") if next_at else "",
+        "event_count": len(events),
+        "lock_active": bool(status.get("no_entry_lock", {}).get("active")) if status else False,
     }
 
 

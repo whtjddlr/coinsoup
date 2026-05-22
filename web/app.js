@@ -199,6 +199,7 @@ function renderDashboard() {
   document.getElementById("sideRegimeReason").textContent = regime.reason;
   document.getElementById("sideRegimeIcon").textContent = regime.name === "bull" ? "상" : regime.name === "bear" ? "약" : "중";
   renderAutomationPolicy(data.automation);
+  renderSupervisorStatus(data.supervisor);
   renderBookPolicy(data.book_policy);
   renderStrategyProfile(data.strategy_profile, data.deployment, data.risk);
   renderRiskPolicy(data.risk);
@@ -244,6 +245,19 @@ function renderAutomationPolicy(policy) {
   document.getElementById("autoMajorLevels").textContent = policy.major_levels || "KST 01:05...";
   document.getElementById("autoDaily").textContent = policy.daily_analysis || "09:10";
   document.getElementById("autoPlan").textContent = policy.paper_plan || "09:12";
+}
+
+function renderSupervisorStatus(supervisor) {
+  const stateEl = document.getElementById("supervisorState");
+  if (!stateEl || !supervisor) return;
+  const running = Boolean(supervisor.running);
+  const locked = Boolean(supervisor.lock_active);
+  const severity = String(supervisor.severity || "UNKNOWN");
+  stateEl.textContent = running ? (locked ? "감시 중 · 매수 잠금" : "감시 중") : "확인 필요";
+  stateEl.className = running ? (severity === "CRIT" ? "negative" : locked ? "caution" : "positive") : "negative";
+  setText("supervisorLast", supervisor.updated_at ? `${timeOnly(supervisor.updated_at)} · ${ageLabel(supervisor.age_seconds)} 전` : "--");
+  setText("supervisorNext", supervisor.next_check_at ? timeOnly(supervisor.next_check_at) : "--");
+  setText("supervisorEvents", `${supervisor.event_count ?? 0}건 · ${friendlySeverity(severity)}`);
 }
 
 function renderStrategyProfile(profile, deployment, risk) {
@@ -1849,6 +1863,24 @@ function setText(id, value) {
 function shortTime(value) {
   if (!value) return "--";
   return String(value).replace("T", " ").slice(0, 19);
+}
+
+function timeOnly(value) {
+  const text = shortTime(value);
+  return text.length >= 16 ? text.slice(11, 16) : text;
+}
+
+function ageLabel(seconds) {
+  const value = Number(seconds || 0);
+  if (value < 60) return `${Math.round(value)}초`;
+  return `${Math.round(value / 60)}분`;
+}
+
+function friendlySeverity(severity = "") {
+  if (severity === "CRIT") return "위험";
+  if (severity === "WARN") return "주의";
+  if (severity === "INFO") return "정상";
+  return "상태 확인";
 }
 
 function formatClock(value) {
