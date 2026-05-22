@@ -84,6 +84,31 @@ const maSpreadPairs = [
   { value: "ema50:ma200", label: "EMA50↔MA200" },
 ];
 
+function restoreMaSpreadPair() {
+  try {
+    const saved = localStorage.getItem("coinsoup.maSpreadPair");
+    if (maSpreadPairs.some((pair) => pair.value === saved)) {
+      state.maSpreadPair = saved;
+    }
+  } catch {
+    state.maSpreadPair = "ema20:ema50";
+  }
+}
+
+function setMaSpreadPair(value) {
+  const selected = maSpreadPairs.some((pair) => pair.value === value) ? value : "ema20:ema50";
+  state.maSpreadPair = selected;
+  try {
+    localStorage.setItem("coinsoup.maSpreadPair", selected);
+  } catch {
+    // 저장이 막힌 브라우저에서는 현재 화면 상태만 유지합니다.
+  }
+}
+
+function selectedMaSpreadPair() {
+  return maSpreadPairs.find((pair) => pair.value === state.maSpreadPair) || maSpreadPairs[0];
+}
+
 const streamAssets = [
   { asset: "BTC", upbit: "KRW-BTC", binance: "BTCUSDT" },
   { asset: "ETH", upbit: "KRW-ETH", binance: "ETHUSDT" },
@@ -112,6 +137,7 @@ const venueConfig = {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+  restoreMaSpreadPair();
   document.getElementById("refreshBtn").addEventListener("click", loadDashboard);
   document.getElementById("decisionRefresh").addEventListener("click", loadDashboard);
   document.getElementById("runPlanBtn").addEventListener("click", runDailyPlan);
@@ -133,17 +159,20 @@ document.addEventListener("DOMContentLoaded", () => {
     state.showIndicators = !state.showIndicators;
     updateIndicatorToggle();
     if (state.chartPayload) renderChart(state.chartPayload);
+    if (state.dashboard) renderSettingsSummary(state.dashboard);
   });
   const maSpreadSelect = document.getElementById("maSpreadPair");
   if (maSpreadSelect) {
     maSpreadSelect.value = state.maSpreadPair;
     maSpreadSelect.addEventListener("change", () => {
-      state.maSpreadPair = maSpreadSelect.value || "ema20:ema50";
+      setMaSpreadPair(maSpreadSelect.value || "ema20:ema50");
       if (!state.showIndicators) {
         state.showIndicators = true;
         updateIndicatorToggle();
       }
       if (state.chartPayload) renderChart(state.chartPayload);
+      renderDecision(selectedAsset(), state.chartPayload);
+      if (state.dashboard) renderSettingsSummary(state.dashboard);
     });
   }
   document.querySelectorAll(".tool-btn[data-timeframe]").forEach((button) => {
@@ -436,6 +465,15 @@ function renderSettingsSummary(data) {
         ["기록", `${performance.snapshot_count ?? 0}개`],
       ],
     },
+    {
+      title: "차트",
+      rows: [
+        ["이평 폭", selectedMaSpreadPair().label],
+        ["보조선", state.showIndicators ? "표시" : "숨김"],
+        ["비교", "위/아래 · 폭"],
+        ["저장", "새로고침 유지"],
+      ],
+    },
   ];
 
   root.innerHTML = groups.map((group) => `
@@ -539,6 +577,7 @@ function renderDecision(asset, chartPayload = null) {
   document.getElementById("riskAtr").textContent = `${asset.atr_pct}%`;
   document.getElementById("riskVolume").textContent = `${asset.volume_ratio}x`;
   document.getElementById("riskRs").textContent = asset.asset === "BTC" ? "기준 자산" : asset.relative_strength_vs_btc;
+  renderMaDecisionDetails(asset, chartPayload);
   renderPaperLeverageTest(venueLevels);
   updateOrderFormForVenue();
 
@@ -556,9 +595,7 @@ function renderDecision(asset, chartPayload = null) {
 }
 
 function decisionLevelSource(asset, chartPayload = null) {
-  const matchesChart = chartPayload
-    && chartPayload.exchange === state.selected.exchange
-    && chartPayload.instrument === state.selected.instrument
+  const matchesChart = isSelectedChartPayload(chartPayload)
     && chartPayload.levels
     && chartPayload.indicators;
   if (matchesChart) {
@@ -586,6 +623,49 @@ function decisionLevelSource(asset, chartPayload = null) {
     takeProfit: asset.take_profit || [],
     source: asset.exchange,
   };
+}
+
+function isSelectedChartPayload(payload) {
+  return Boolean(payload
+    && payload.exchange === state.selected.exchange
+    && payload.instrument === state.selected.instrument);
+}
+
+function renderMaDecisionDetails(asset, chartPayload = null) {
+  const spread = maSpreadSummary(isSelectedChartPayload(chartPayload) ? chartPayload : null, asset);
+  setText("riskMaPair", selectedMaSpreadPair().label);
+  if (!spread) {
+    setText("riskMaStack", "--");
+    setText("riskMaSpread", "--");
+    setTone("riskMaSpread", "");
+    return;
+  }
+  setText("riskMaStack", `${spread.upperLabel} 위 · ${spread.lowerLabel} 아래`);
+  setText("riskMaSpread", `${formatPctPlain(spread.gapPct)}% · ${spread.stateLabel}`);
+  setTone("riskMaSpread", maSpreadTone(spread));
+}
+
+function maSpreadTone(spread) {
+  if (!spread) return "";
+  if (spread.gapPct < 0.12) return "caution";
+  if (spread.current > 0 && spread.current < spread.lowerValue) return "negative";
+  if (spread.current > 0 && spread.current > spread.upperValue) return "positive";
+  return "info";
+}
+
+function maSpreadCheck(asset, levels = {}) {
+  const spread = maSpreadSummary(isSelectedChartPayload(state.chartPayload) ? state.chartPayload : null, asset);
+  const current = Number(levels.current || spread?.current || 0);
+  if (!spread || current <= 0) {
+    return { label: "이평선", state: "caution", tag: "확인중" };
+  }
+  if (current > spread.upperValue) {
+    return { label: "이평선", state: "pass", tag: "가격 위" };
+  }
+  if (current >= spread.lowerValue) {
+    return { label: "이평선", state: "caution", tag: "선 사이" };
+  }
+  return { label: "이평선", state: "fail", tag: "가격 아래" };
 }
 
 function renderPaperLeverageTest(levels) {
@@ -661,6 +741,7 @@ function instrumentForVenue(asset, venue) {
 }
 
 function priceForVenue(asset, venue) {
+  if (!asset) return 0;
   const key = venueConfig[venue]?.priceKey || "current_price";
   return Number(asset[key] || asset.binance_price || asset.current_price || 0);
 }
@@ -731,6 +812,7 @@ function buildChecks(asset, levels = {}) {
   const overheatState = rsi >= 72 || Math.abs(kimchi) >= 4
     ? "fail"
     : rsi >= 65 || Math.abs(kimchi) >= 2 ? "caution" : "pass";
+  const maCheck = maSpreadCheck(asset, levels);
   return [
     {
       label: "시장",
@@ -747,6 +829,7 @@ function buildChecks(asset, levels = {}) {
       state: priceState,
       tag: `${priceTag} · ${supportDistance.toFixed(2)}%`,
     },
+    maCheck,
     {
       label: "거래량",
       state: volumeState,
@@ -1943,10 +2026,10 @@ function addMaSpreadCurrentLines(payload) {
   addPriceLine(spread.lowerValue, "#38bdf8", `${spread.lowerLabel} 아래`, { lineStyle: 2, axisLabelVisible: true });
 }
 
-function maSpreadSummary(payload) {
+function maSpreadSummary(payload, fallbackAsset = null) {
   const [firstKey, secondKey] = selectedMaSpreadKeys();
-  const firstValue = currentMaValue(payload, firstKey);
-  const secondValue = currentMaValue(payload, secondKey);
+  const firstValue = currentMaValue(payload, firstKey, fallbackAsset);
+  const secondValue = currentMaValue(payload, secondKey, fallbackAsset);
   if (firstValue <= 0 || secondValue <= 0) return null;
   const firstLabel = maLineLabels[firstKey] || firstKey.toUpperCase();
   const secondLabel = maLineLabels[secondKey] || secondKey.toUpperCase();
@@ -1956,6 +2039,7 @@ function maSpreadSummary(payload) {
   const upperValue = firstIsUpper ? firstValue : secondValue;
   const lowerValue = firstIsUpper ? secondValue : firstValue;
   const gapPct = Math.abs(rawMovePct(lowerValue, upperValue));
+  const current = currentPriceForMaSpread(payload, fallbackAsset);
   return {
     firstLabel,
     secondLabel,
@@ -1967,18 +2051,28 @@ function maSpreadSummary(payload) {
     lowerValue,
     gapPct,
     stateLabel: maSpreadState(gapPct),
+    current,
+    currentToUpperPct: current > 0 ? rawMovePct(current, upperValue) : 0,
+    currentToLowerPct: current > 0 ? rawMovePct(current, lowerValue) : 0,
   };
 }
 
 function selectedMaSpreadKeys() {
-  const selected = maSpreadPairs.find((pair) => pair.value === state.maSpreadPair) || maSpreadPairs[0];
-  return selected.value.split(":");
+  return selectedMaSpreadPair().value.split(":");
 }
 
-function currentMaValue(payload, key) {
+function currentMaValue(payload, key, fallbackAsset = null) {
   const indicatorValue = Number(payload?.indicators?.[key] || 0);
   if (indicatorValue > 0) return indicatorValue;
-  return lastLineValue(payload?.lines?.[key]);
+  const lineValue = lastLineValue(payload?.lines?.[key]);
+  if (lineValue > 0) return lineValue;
+  return state.selected.exchange === "upbit" ? Number(fallbackAsset?.[key] || 0) : 0;
+}
+
+function currentPriceForMaSpread(payload, fallbackAsset = null) {
+  const chartPrice = Number(payload?.indicators?.close || 0);
+  if (chartPrice > 0) return chartPrice;
+  return state.selected.exchange === "upbit" ? priceForVenue(fallbackAsset, state.venue) : 0;
 }
 
 function lastLineValue(points) {
@@ -2042,6 +2136,8 @@ function renderLineLegend(payload, context = {}) {
       <span class="ma-spread-item"><b>이평 위</b>${maSpread.upperLabel} ${formatPrice(maSpread.upperValue)}</span>
       <span class="ma-spread-item"><b>이평 아래</b>${maSpread.lowerLabel} ${formatPrice(maSpread.lowerValue)}</span>
       <span class="ma-spread-item accent"><b>이평 폭</b>${formatPctPlain(maSpread.gapPct)}%</span>
+      <span class="ma-spread-item"><b>현재→위</b>${formatPct(maSpread.currentToUpperPct)}</span>
+      <span class="ma-spread-item"><b>현재→아래</b>${formatPct(maSpread.currentToLowerPct)}</span>
       <span class="ma-spread-item"><b>상태</b>${maSpread.stateLabel}</span>
     </div>` : ""}
     ${gapItems.length ? `<div class="line-gap-grid">${gapItems.map((item) => `
