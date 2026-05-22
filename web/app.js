@@ -13,6 +13,7 @@ const state = {
     average: true,
     levels: true,
     trade: true,
+    orders: true,
     ma: false,
     magnet: false,
     extra: false,
@@ -97,6 +98,7 @@ const defaultLineVisibility = {
   average: true,
   levels: true,
   trade: true,
+  orders: true,
   ma: false,
   magnet: false,
   extra: false,
@@ -107,6 +109,7 @@ const lineToggleText = {
   average: { on: "평단 ON", off: "평단 OFF" },
   levels: { on: "지지저항 ON", off: "지지저항 OFF" },
   trade: { on: "손절목표 ON", off: "손절목표 OFF" },
+  orders: { on: "매매 ON", off: "매매 OFF" },
   ma: { on: "이평 ON", off: "이평 OFF" },
   magnet: { on: "자석 ON", off: "자석 OFF" },
   extra: { on: "보조선 ON", off: "보조선 OFF" },
@@ -784,6 +787,7 @@ function chartLineSummary() {
     ["average", "평단"],
     ["levels", "지지"],
     ["trade", "손절"],
+    ["orders", "매매"],
     ["ma", "이평"],
     ["magnet", "자석"],
     ["extra", "보조"],
@@ -1622,14 +1626,108 @@ function renderChart(payload) {
   }
   const averagePrice = averagePriceForChart(asset, payload, position);
   if (lineVisible("average")) {
-    addPriceLine(averagePrice, "#facc15", "평단", { lineWidth: 2, lineStyle: 1 });
+    addPriceLine(averagePrice, "#facc15", "평단 확인", { lineWidth: 3, lineStyle: 0 });
   }
+  renderTradeMarkers(payload, asset);
   state.chart.timeScale().fitContent();
   document.getElementById("priceTag").textContent = formatPrice(payload.indicators.close);
   renderLineLegend(payload, { position, tradeLines, averagePrice });
   if (payload.exchange === state.selected.exchange && payload.instrument === state.selected.instrument) {
     renderDecision(selectedAsset(), payload);
   }
+}
+
+function renderTradeMarkers(payload, asset) {
+  if (!state.candleSeries?.setMarkers) return;
+  if (!lineVisible("orders")) {
+    state.candleSeries.setMarkers([]);
+    return;
+  }
+  const markers = tradeMarkersForChart(payload, asset);
+  state.candleSeries.setMarkers(markers);
+}
+
+function tradeMarkersForChart(payload, asset) {
+  const trades = state.dashboard?.trades || [];
+  if (!payload || !asset || !trades.length) return [];
+  return trades
+    .filter((trade) => trade.status === "simulated")
+    .filter((trade) => tradeMatchesChart(trade, payload, asset))
+    .map((trade) => tradeToMarker(trade, payload, asset))
+    .filter(Boolean)
+    .sort((a, b) => Number(a.time) - Number(b.time));
+}
+
+function tradeMatchesChart(trade, payload, asset) {
+  if (!trade?.instrument) return false;
+  if (trade.exchange === payload.exchange && trade.instrument === payload.instrument) return true;
+  const tradeAsset = assetFromInstrument(trade.instrument);
+  return tradeAsset && tradeAsset === asset.asset;
+}
+
+function tradeToMarker(trade, payload, asset) {
+  const time = tradeMarkerTime(trade, payload);
+  const price = chartPriceFromTrade(trade, payload, asset);
+  if (!time || price <= 0) return null;
+  const kind = tradeKind(trade);
+  const isClose = kind.action === "close";
+  const isShort = kind.direction === "short";
+  const isSpotSell = kind.market === "spot" && kind.action === "sell";
+  const above = isClose ? !isShort : (isShort || isSpotSell);
+  const color = isClose
+    ? "#facc15"
+    : above ? "#fb7185" : "#22c55e";
+  return {
+    time,
+    position: above ? "aboveBar" : "belowBar",
+    color,
+    shape: isClose ? "circle" : above ? "arrowDown" : "arrowUp",
+    text: tradeMarkerText(kind, price),
+  };
+}
+
+function tradeMarkerTime(trade, payload) {
+  const seconds = Math.floor(Date.parse(trade.timestamp) / 1000);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  const candles = payload.candles || [];
+  if (!candles.length) return seconds;
+  let best = candles[0];
+  let bestDistance = Infinity;
+  candles.forEach((candle) => {
+    const distance = Math.abs(Number(candle.time) - seconds);
+    if (distance < bestDistance) {
+      bestDistance = distance;
+      best = candle;
+    }
+  });
+  return Number(best.time || seconds);
+}
+
+function chartPriceFromTrade(trade, payload, asset) {
+  const rawPrice = Number(trade.effective_price || trade.price || 0);
+  if (rawPrice <= 0) return 0;
+  if (trade.exchange === payload.exchange) return rawPrice;
+  const usdtKrw = Number(asset?.usdt_krw || state.dashboard?.usdt_krw || 0);
+  if (payload.exchange === "upbit" && trade.exchange !== "upbit") {
+    return usdtKrw > 0 ? rawPrice * usdtKrw : 0;
+  }
+  if (payload.exchange !== "upbit" && trade.exchange === "upbit") {
+    return usdtKrw > 0 ? rawPrice / usdtKrw : 0;
+  }
+  return rawPrice;
+}
+
+function tradeMarkerText(kind, price) {
+  if (kind.market === "futures") {
+    return `${kind.directionLabel} ${kind.actionLabel} ${formatPrice(price)}`;
+  }
+  return `${kind.actionLabel} ${formatPrice(price)}`;
+}
+
+function assetFromInstrument(instrument) {
+  const text = String(instrument || "").toUpperCase();
+  if (text.startsWith("KRW-")) return text.replace("KRW-", "");
+  return text.replace(/USDT$|USD$|BTC$|KRW$/g, "");
 }
 
 async function loadMultiTimeframe() {
@@ -2267,6 +2365,7 @@ function renderLineLegend(payload, context = {}) {
   const resistance = Number(payload.levels.resistance || payload.lines.resistance || 0);
   const stopLoss = Number(tradeLines.stopLoss || payload.lines.stop_loss || 0);
   const current = Number(payload.indicators.close || 0);
+  const tradeMarkerCount = lineVisible("orders") ? tradeMarkersForChart(payload, asset).length : 0;
   const gapItems = lineGapItems({
     current,
     averagePrice,
@@ -2295,7 +2394,8 @@ function renderLineLegend(payload, context = {}) {
       <span class="legend-chip target" title="일부 수익을 챙길 수 있는 목표가">목표1 ${formatPrice(takeProfit[0])}</span>
       ${lineVisible("ma") && takeProfit[1] ? `<span class="legend-chip target" title="두 번째 수익 목표가">목표2 ${formatPrice(takeProfit[1])}</span>` : ""}
     ` : ""}
-    ${lineVisible("average") && averagePrice ? `<span class="legend-chip average" title="현재 모의 보유 평균 진입가">평단 ${formatPrice(averagePrice)}</span>` : ""}
+    ${lineVisible("average") && averagePrice ? `<span class="legend-chip average" title="현재 모의 보유 평균 진입가">평단 확인 ${formatPrice(averagePrice)}</span>` : ""}
+    ${lineVisible("orders") ? `<span class="legend-chip orders" title="차트에 찍힌 가상 매수/매도 기록">매매 ${tradeMarkerCount}건</span>` : ""}
     ${indicatorLegend}
     ${lineVisible("metrics") ? `
       <span class="legend-chip muted-chip">과열도 ${Number(payload.indicators.rsi).toFixed(1)}</span>
@@ -2344,7 +2444,7 @@ function renderPositionTag(payload, position, averagePrice) {
   const leverage = position.exchange === "binance_futures" ? ` ${formatLeverage(position.leverage || 1)}` : "";
   tag.className = `position-tag ${sideInfo.className} ${pctToneClass(move)}`;
   tag.innerHTML = `
-    <strong>평단 ${formatPrice(averagePrice)}</strong>
+    <strong>평단 확인 ${formatPrice(averagePrice)}</strong>
     <span>${sideInfo.label}${leverage} · 현재 ${formatPct(move)}</span>
   `;
 }
