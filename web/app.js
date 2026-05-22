@@ -1024,9 +1024,9 @@ function renderTrades(trades) {
   const cardsRoot = document.getElementById("tradeCards");
   const allTrades = trades || [];
   const filtered = allTrades.filter((trade) => {
-    if (state.tradeFilter === "all") return true;
+    if (state.tradeFilter === "all") return trade.status === "simulated";
     if (state.tradeFilter === "skipped") return trade.status === "skipped";
-    return trade.side === state.tradeFilter;
+    return trade.status === "simulated" && trade.side === state.tradeFilter;
   });
   renderTradeSummary(allTrades, summaryRoot);
 
@@ -1049,13 +1049,13 @@ function renderTrades(trades) {
       : `
         <div class="trade-empty">
           <strong>기록 없음</strong>
-          <span>필터 없음</span>
+          <span>${state.tradeFilter === "all" ? "체결 없음" : "필터 없음"}</span>
         </div>
       `;
   }
 
   if (!filtered.length) {
-    body.innerHTML = `<tr><td colspan="8">기록 없음</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8">${state.tradeFilter === "all" ? "체결된 가상 주문 없음" : "기록 없음"}</td></tr>`;
     return;
   }
 
@@ -1063,7 +1063,7 @@ function renderTrades(trades) {
     <tr>
       <td>${shortTime(trade.timestamp).slice(5)}</td>
       <td>${trade.instrument}</td>
-      <td><span class="trade-side ${tradeSideClass(trade)}">${translateSide(trade.side)}</span></td>
+      <td><span class="trade-side ${tradeSideClass(trade)}">${translateTradeSide(trade)}</span></td>
       <td>${tradeExecutedAmount(trade)}</td>
       <td>${formatPrice(trade.effective_price || trade.price)}</td>
       <td>${formatQuantity(trade.base_quantity)}</td>
@@ -1099,9 +1099,9 @@ function renderTradeSummary(trades, root) {
       <b>${sells.length ? "실현손익" : "매도 없음"}</b>
     </div>
     <div class="trade-summary-card muted-card">
-      <span>제외</span>
+      <span>주문 안함</span>
       <strong>${skipped.length}건</strong>
-      <b>중복/조건</b>
+      <b>제외 탭에서 확인</b>
     </div>
   `;
 }
@@ -1117,7 +1117,7 @@ function renderTradeCard(trade) {
           <span>${shortTime(trade.timestamp).slice(5)}</span>
           <strong>${trade.instrument}</strong>
         </div>
-        <span class="trade-side ${sideClass}">${translateSide(trade.side)}</span>
+        <span class="trade-side ${sideClass}">${translateTradeSide(trade)}</span>
       </div>
       <div class="trade-card-main">
         <strong>${tradeExecutedAmount(trade)}</strong>
@@ -1132,6 +1132,7 @@ function renderTradeCard(trade) {
 }
 
 function tradeExecutedAmount(trade) {
+  if (trade.status === "skipped") return "체결 없음";
   const value = Number(trade.executed_quote_value || trade.requested_quote_budget || 0);
   if (!value) return "--";
   return `${moneyFormat.format(Math.round(value))} ${trade.quote_currency || "KRW"}`;
@@ -2097,8 +2098,15 @@ function translateSide(side) {
   return side === "buy" ? "매수" : side === "sell" ? "매도" : side;
 }
 
+function translateTradeSide(trade) {
+  if (trade?.status === "skipped") {
+    return trade.side === "sell" ? "매도 안함" : "매수 안함";
+  }
+  return translateSide(trade?.side);
+}
+
 function translateStatus(status) {
-  return status === "simulated" ? "가상 체결" : status === "skipped" ? "제외" : status;
+  return status === "simulated" ? "가상 체결" : status === "skipped" ? "주문 안함" : status;
 }
 
 function friendlyStrategyName(name = "") {
