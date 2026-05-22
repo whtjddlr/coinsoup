@@ -1387,14 +1387,23 @@ def portfolio_payload(
     equity_rows: list[dict[str, str]],
 ) -> dict[str, Any]:
     positions = []
+    total_cost_basis = 0.0
+    total_position_value = 0.0
+    total_unrealized_pnl = 0.0
+    total_realized_pnl = 0.0
     for key, raw in state.get("portfolio", {}).get("positions", {}).items():
         exchange, instrument = key.split(":", 1)
+        total_realized_pnl += float(raw.get("realized_pnl", 0) or 0)
         quantity = float(raw.get("quantity", 0))
         if quantity <= 0:
             continue
         price = float(prices.get((exchange, instrument), Decimal("0")))
         cost = float(raw.get("cost_basis", 0))
         value = quantity * price
+        unrealized_pnl = value - cost
+        total_cost_basis += cost
+        total_position_value += value
+        total_unrealized_pnl += unrealized_pnl
         positions.append(
             {
                 "exchange": exchange,
@@ -1404,7 +1413,7 @@ def portfolio_payload(
                 "average_price": cost / quantity if quantity else 0,
                 "current_price": price,
                 "value": value,
-                "unrealized_pnl": value - cost,
+                "unrealized_pnl": unrealized_pnl,
                 "realized_pnl": float(raw.get("realized_pnl", 0)),
             }
         )
@@ -1412,6 +1421,13 @@ def portfolio_payload(
         "cash": state.get("portfolio", {}).get("cash", {}),
         "positions": positions,
         "equity": equity_rows,
+        "summary": {
+            "cost_basis": total_cost_basis,
+            "position_value": total_position_value,
+            "unrealized_pnl": total_unrealized_pnl,
+            "realized_pnl": total_realized_pnl,
+            "trade_pnl": total_unrealized_pnl + total_realized_pnl,
+        },
     }
 
 

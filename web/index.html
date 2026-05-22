@@ -159,6 +159,11 @@
             <small id="sessionPnlDetail">--</small>
           </article>
           <article class="status-tile">
+            <span>실현손익</span>
+            <strong id="sessionRealized">--</strong>
+            <small id="sessionRealizedDetail">매도 확정</small>
+          </article>
+          <article class="status-tile">
             <span>로컬 감시</span>
             <strong id="sessionSupervisor">--</strong>
             <small id="sessionSupervisorDetail">--</small>
@@ -176,6 +181,11 @@
               <span class="summary-label">평가손익</span>
               <strong id="overviewPnlAmount">--</strong>
               <span id="overviewPnlDetail" class="summary-return">--</span>
+            </div>
+            <div id="overviewRealizedBox" class="summary-main realized-focus">
+              <span class="summary-label">실현손익</span>
+              <strong id="overviewRealizedAmount">--</strong>
+              <span id="overviewRealizedDetail" class="summary-return">매도 확정</span>
             </div>
             <div class="summary-main equity-focus">
               <span class="summary-label">총 평가액</span>
@@ -414,6 +424,7 @@
                   <th>현재가</th>
                   <th>평가금액</th>
                   <th>평가손익</th>
+                  <th>실현손익</th>
                   <th>수익률</th>
                   <th>투입원금</th>
                 </tr>
