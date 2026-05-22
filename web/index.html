@@ -137,6 +137,35 @@
           <span class="risk-state">위험 상태 <b>Normal</b></span>
         </section>
 
+        <section class="portfolio-overview" id="portfolioOverview">
+          <div class="portfolio-summary">
+            <div class="summary-main">
+              <span class="summary-label">총 평가액</span>
+              <strong id="overviewEquity">--</strong>
+              <span id="overviewReturn" class="summary-return">--</span>
+            </div>
+            <div class="summary-metrics">
+              <div>
+                <span>현금</span>
+                <strong id="overviewCash">--</strong>
+              </div>
+              <div>
+                <span>투자중</span>
+                <strong id="overviewInvested">--</strong>
+              </div>
+              <div>
+                <span>보유 종목</span>
+                <strong id="overviewCount">--</strong>
+              </div>
+              <div>
+                <span>가격 반영</span>
+                <strong id="overviewFreshness">--</strong>
+              </div>
+            </div>
+          </div>
+          <div id="holdingCards" class="holding-cards"></div>
+        </section>
+
         <section class="asset-grid" id="assets"></section>
 
         <section class="dashboard-grid">
@@ -324,6 +353,8 @@
                   <th>현재가</th>
                   <th>평가금액</th>
                   <th>평가손익</th>
+                  <th>수익률</th>
+                  <th>투입원금</th>
                 </tr>
               </thead>
               <tbody id="positionsBody"></tbody>

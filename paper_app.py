@@ -1334,6 +1334,7 @@ def portfolio_payload(
                 "exchange": exchange,
                 "instrument": instrument,
                 "quantity": quantity,
+                "cost_basis": cost,
                 "average_price": cost / quantity if quantity else 0,
                 "current_price": price,
                 "value": value,

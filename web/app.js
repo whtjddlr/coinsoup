@@ -125,6 +125,7 @@ document.addEventListener("DOMContentLoaded", () => {
   updateScalpToggle();
   updateStreamStatus();
   loadDashboard();
+  window.setInterval(refreshDashboardOnly, 30000);
 });
 
 function setupNavLinks() {
@@ -167,6 +168,17 @@ async function loadDashboard() {
   if (state.stream.enabled) startStreaming();
 }
 
+async function refreshDashboardOnly() {
+  try {
+    const response = await fetch("/api/dashboard");
+    state.dashboard = await response.json();
+    renderDashboard();
+    if (state.stream.enabled) startStreaming();
+  } catch (_error) {
+    updateStreamStatus("오류");
+  }
+}
+
 function renderDashboard() {
   const data = state.dashboard;
   const regime = data.market_regime;
@@ -185,6 +197,7 @@ function renderDashboard() {
 
   renderAssetCards(data.assets);
   renderDecision(selectedAsset());
+  renderPortfolioOverview(data.portfolio, data.updated_at);
   renderEquity(data.portfolio.equity);
   renderPositions(data.portfolio.positions);
   renderPerformance(data.performance);
@@ -592,22 +605,106 @@ function renderEquity(rows) {
   `).join("");
 }
 
+function renderPortfolioOverview(portfolio, updatedAt = "") {
+  if (!portfolio) return;
+  const positions = portfolio.positions || [];
+  const equity = (portfolio.equity || [])[0] || {};
+  const cash = Number(equity.cash || 0);
+  const positionValue = positions.reduce((sum, position) => sum + Number(position.value || 0), 0);
+  const totalEquity = cash + positionValue;
+  const costBasis = positions.reduce((sum, position) => {
+    const quantity = Number(position.quantity || 0);
+    const average = Number(position.average_price || 0);
+    return sum + Number(position.cost_basis || quantity * average || 0);
+  }, 0);
+  const pnl = positionValue - costBasis;
+  const returnPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+  const pnlClass = pnl >= 0 ? "positive" : "negative";
+  const lastTick = state.stream.lastTickAt ? formatClock(state.stream.lastTickAt) : shortTime(updatedAt).slice(11, 19);
+
+  setText("overviewEquity", `${moneyFormat.format(Math.round(totalEquity))} KRW`);
+  const returnEl = document.getElementById("overviewReturn");
+  if (returnEl) {
+    returnEl.className = `summary-return ${pnlClass}`;
+    returnEl.textContent = `${formatSignedMoney(pnl, "KRW")} · ${formatPct(returnPct)}`;
+  }
+  setText("overviewCash", `${moneyFormat.format(Math.round(cash))} KRW`);
+  setText("overviewInvested", `${moneyFormat.format(Math.round(positionValue))} KRW`);
+  setText("overviewCount", `${positions.length}개`);
+  setText("overviewFreshness", state.stream.enabled ? `실시간 ${lastTick}` : `스냅샷 ${shortTime(updatedAt).slice(11, 19)}`);
+
+  const cards = document.getElementById("holdingCards");
+  if (!cards) return;
+  if (!positions.length) {
+    cards.innerHTML = `
+      <div class="holding-empty">
+        <strong>아직 보유 포지션이 없습니다.</strong>
+        <span>차트 조건이 맞으면 TEST MODE 가상 주문이 여기에 표시됩니다.</span>
+      </div>
+    `;
+    return;
+  }
+  cards.innerHTML = positions.map((position) => holdingCard(position, totalEquity)).join("");
+}
+
+function holdingCard(position, totalEquity) {
+  const quantity = Number(position.quantity || 0);
+  const average = Number(position.average_price || 0);
+  const costBasis = Number(position.cost_basis || quantity * average || 0);
+  const value = Number(position.value || 0);
+  const pnl = Number(position.unrealized_pnl || value - costBasis);
+  const pnlPct = costBasis > 0 ? (pnl / costBasis) * 100 : 0;
+  const weight = totalEquity > 0 ? (value / totalEquity) * 100 : 0;
+  const pnlClass = pnl >= 0 ? "positive" : "negative";
+  const displaySymbol = position.instrument.replace("KRW-", "");
+  return `
+    <article class="holding-card">
+      <div class="holding-head">
+        <div>
+          <span>${position.exchange.toUpperCase()}</span>
+          <strong>${displaySymbol}</strong>
+        </div>
+        <b class="${pnlClass}">${formatPct(pnlPct)}</b>
+      </div>
+      <div class="holding-value">
+        <strong>${moneyFormat.format(Math.round(value))} KRW</strong>
+        <span class="${pnlClass}">${formatSignedMoney(pnl, "KRW")}</span>
+      </div>
+      <div class="holding-bars">
+        <span style="width: ${Math.min(Math.max(weight, 0), 100)}%"></span>
+      </div>
+      <div class="holding-meta">
+        <span>비중 <b>${weight.toFixed(1)}%</b></span>
+        <span>수량 <b>${formatQuantity(quantity)}</b></span>
+        <span>평균 <b>${formatPrice(average)}</b></span>
+        <span>현재 <b>${formatPrice(position.current_price)}</b></span>
+      </div>
+    </article>
+  `;
+}
+
 function renderPositions(positions) {
   const body = document.getElementById("positionsBody");
   if (!positions.length) {
-    body.innerHTML = `<tr><td colspan="6">아직 보유 포지션이 없습니다.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="8">아직 보유 포지션이 없습니다.</td></tr>`;
     return;
   }
   body.innerHTML = positions.map((position) => {
     const pnlClass = Number(position.unrealized_pnl) >= 0 ? "positive" : "negative";
+    const quantity = Number(position.quantity || 0);
+    const average = Number(position.average_price || 0);
+    const costBasis = Number(position.cost_basis || quantity * average || 0);
+    const pnlPct = costBasis > 0 ? (Number(position.unrealized_pnl || 0) / costBasis) * 100 : 0;
     return `
       <tr>
         <td>${position.exchange}:${position.instrument}</td>
-        <td>${numberFormat.format(position.quantity)}</td>
+        <td>${formatQuantity(quantity)}</td>
         <td>${formatPrice(position.average_price)}</td>
         <td>${formatPrice(position.current_price)}</td>
         <td>${moneyFormat.format(position.value)}</td>
         <td class="${pnlClass}">${moneyFormat.format(position.unrealized_pnl)}</td>
+        <td class="${pnlClass}">${formatPct(pnlPct)}</td>
+        <td>${moneyFormat.format(costBasis)}</td>
       </tr>
     `;
   }).join("");
@@ -1059,11 +1156,28 @@ function updatePositionPrice(exchange, instrument, price) {
   positions.forEach((position) => {
     if (position.exchange !== exchange || position.instrument !== instrument) return;
     const quantity = Number(position.quantity || 0);
-    const costBasis = Number(position.cost_basis || 0);
+    const costBasis = Number(position.cost_basis || quantity * Number(position.average_price || 0));
     position.current_price = price;
     position.value = quantity * price;
     position.unrealized_pnl = position.value - costBasis;
   });
+  recalcRealtimeEquity();
+}
+
+function recalcRealtimeEquity() {
+  const portfolio = state.dashboard?.portfolio;
+  if (!portfolio || !portfolio.equity?.length) return;
+  const row = portfolio.equity[0];
+  const cash = Number(row.cash || 0);
+  const positionValue = (portfolio.positions || []).reduce((sum, position) => sum + Number(position.value || 0), 0);
+  const costBasis = (portfolio.positions || []).reduce((sum, position) => {
+    const quantity = Number(position.quantity || 0);
+    const average = Number(position.average_price || 0);
+    return sum + Number(position.cost_basis || quantity * average || 0);
+  }, 0);
+  row.position_value = positionValue;
+  row.total_equity = cash + positionValue;
+  row.unrealized_pnl = positionValue - costBasis;
 }
 
 function scheduleRealtimeRender() {
@@ -1078,6 +1192,8 @@ function scheduleRealtimeRender() {
     });
     renderAssetCards(state.dashboard.assets);
     renderDecision(selectedAsset());
+    renderPortfolioOverview(state.dashboard.portfolio, state.dashboard.updated_at);
+    renderEquity(state.dashboard.portfolio.equity || []);
     renderPositions(state.dashboard.portfolio.positions || []);
     updateStreamStatus();
   });
@@ -1381,6 +1497,19 @@ function formatCurrencyAmount(value, currency = "KRW") {
   if (currency === "KRW") return `${moneyFormat.format(Math.round(number))} KRW`;
   if (currency === "USDT") return `${moneyFormat.format(number)} USDT`;
   return `${moneyFormat.format(number)} ${currency}`;
+}
+
+function formatQuantity(value) {
+  const number = Number(value || 0);
+  if (number === 0) return "0";
+  if (number >= 1) return numberFormat.format(Number(number.toFixed(6)));
+  if (number >= 0.0001) return numberFormat.format(Number(number.toFixed(8)));
+  return number.toExponential(4);
+}
+
+function setText(id, value) {
+  const element = document.getElementById(id);
+  if (element) element.textContent = value;
 }
 
 function shortTime(value) {
