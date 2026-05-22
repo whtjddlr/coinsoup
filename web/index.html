@@ -110,7 +110,7 @@
         </section>
 
         <section class="mini-card">
-          <h3>관리감독</h3>
+          <h3>로컬 감시 상태</h3>
           <div class="small-list">
             <div><span>상태</span><b id="supervisorState" class="caution">확인 중</b></div>
             <div><span>마지막 점검</span><b id="supervisorLast">--</b></div>
@@ -241,7 +241,7 @@
               <div class="panel-head">
                 <div>
                   <h2>매수/매도 기록</h2>
-                  <p>모의 매수·매도와 제외된 이유</p>
+                  <p>모의 주문 기록입니다. 실제 주문은 나가지 않습니다.</p>
                 </div>
                 <div class="log-actions">
                   <div class="segmented">
@@ -250,7 +250,7 @@
                     <button type="button" data-trade-filter="sell">매도</button>
                     <button type="button" data-trade-filter="skipped">제외</button>
                   </div>
-                  <button id="runPlanBtn" class="secondary-btn">오늘 계획 실행</button>
+                  <button id="runPlanBtn" class="secondary-btn" title="정해진 모의 주문 계획을 지금 한 번만 수동으로 실행합니다.">모의 계획 수동 실행</button>
                 </div>
               </div>
               <div id="tradeSummary" class="trade-summary"></div>

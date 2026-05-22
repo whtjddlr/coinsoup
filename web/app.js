@@ -1781,8 +1781,23 @@ async function submitPaperOrder(event) {
 }
 
 async function runDailyPlan() {
-  await fetch("/api/run-plan", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-  await loadDashboard();
+  const button = document.getElementById("runPlanBtn");
+  const confirmed = window.confirm("모의 계획을 지금 한 번 실행할까요? 실제 거래소 주문은 나가지 않습니다.");
+  if (!confirmed) return;
+  const originalText = button?.textContent || "모의 계획 수동 실행";
+  if (button) {
+    button.disabled = true;
+    button.textContent = "실행 중...";
+  }
+  try {
+    await fetch("/api/run-plan", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+    await loadDashboard();
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
 }
 
 function selectedAsset() {
