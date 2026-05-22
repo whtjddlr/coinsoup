@@ -200,6 +200,7 @@ function renderDashboard() {
   document.getElementById("sideRegimeIcon").textContent = regime.name === "bull" ? "상" : regime.name === "bear" ? "약" : "중";
   renderAutomationPolicy(data.automation);
   renderSupervisorStatus(data.supervisor);
+  renderSessionStrip(data);
   renderBookPolicy(data.book_policy);
   renderStrategyProfile(data.strategy_profile, data.deployment, data.risk);
   renderRiskPolicy(data.risk);
@@ -258,6 +259,48 @@ function renderSupervisorStatus(supervisor) {
   setText("supervisorLast", supervisor.updated_at ? `${timeOnly(supervisor.updated_at)} · ${ageLabel(supervisor.age_seconds)} 전` : "--");
   setText("supervisorNext", supervisor.next_check_at ? timeOnly(supervisor.next_check_at) : "--");
   setText("supervisorEvents", `${supervisor.event_count ?? 0}건 · ${friendlySeverity(severity)}`);
+}
+
+function renderSessionStrip(data) {
+  const portfolio = data?.portfolio || {};
+  const positions = portfolio.positions || [];
+  const equity = (portfolio.equity || [])[0] || {};
+  const performanceTotal = data?.performance?.total || {};
+  const cash = Number(equity.cash || 0);
+  const positionValue = positions.reduce((sum, position) => sum + Number(position.value || 0), 0);
+  const totalEquity = Number.isFinite(Number(performanceTotal.current_equity_krw))
+    ? Number(performanceTotal.current_equity_krw)
+    : Number(equity.total_equity || cash + positionValue);
+  const pnl = Number.isFinite(Number(performanceTotal.pnl_krw))
+    ? Number(performanceTotal.pnl_krw)
+    : Number(equity.unrealized_pnl || 0);
+  const returnPct = Number.isFinite(Number(performanceTotal.return_pct))
+    ? Number(performanceTotal.return_pct)
+    : totalEquity > 0 ? (pnl / totalEquity) * 100 : 0;
+  const pnlTone = pnl >= 0 ? "positive" : "negative";
+
+  setText("sessionEquity", totalEquity > 0 ? `${moneyFormat.format(Math.round(totalEquity))} KRW` : "--");
+  setText("sessionEquityDetail", positions.length ? `${positions.length}종목 보유 · 현금 ${moneyFormat.format(Math.round(cash))} KRW` : "보유 종목 없음");
+  setText("sessionPnl", formatSignedMoney(pnl, "KRW"));
+  setText("sessionPnlDetail", `시드 대비 ${formatPct(returnPct)}`);
+  setTone("sessionPnl", pnlTone);
+  setTone("sessionPnlDetail", pnlTone);
+
+  const supervisor = data?.supervisor || {};
+  const running = Boolean(supervisor.running);
+  const locked = Boolean(supervisor.lock_active);
+  const severity = String(supervisor.severity || "UNKNOWN");
+  const supervisorTone = running ? (severity === "CRIT" ? "negative" : locked ? "caution" : "positive") : "negative";
+  setText("sessionSupervisor", running ? (locked ? "감시 중 · 잠금" : "감시 중") : "확인 필요");
+  setText("sessionSupervisorDetail", supervisor.next_check_at ? `다음 ${timeOnly(supervisor.next_check_at)} · Codex 15분 요약` : "Codex 15분 요약");
+  setTone("sessionSupervisor", supervisorTone);
+
+  const risk = data?.risk || {};
+  const liveLocked = risk.live_trading_locked !== false;
+  const withdrawalsOff = !risk.auto_withdrawals;
+  setText("sessionSafety", liveLocked && withdrawalsOff ? "실거래 차단" : "확인 필요");
+  setText("sessionSafetyDetail", liveLocked ? "주문·출금 자동화 OFF" : "실거래 잠금 확인 필요");
+  setTone("sessionSafety", liveLocked && withdrawalsOff ? "positive" : "negative");
 }
 
 function renderStrategyProfile(profile, deployment, risk) {
@@ -1511,6 +1554,7 @@ function scheduleRealtimeRender() {
     renderAssetCards(state.dashboard.assets);
     renderDecision(selectedAsset());
     renderPortfolioOverview(state.dashboard.portfolio, state.dashboard.updated_at, state.dashboard.performance);
+    renderSessionStrip(state.dashboard);
     renderEquity(state.dashboard.portfolio.equity || []);
     renderPositions(state.dashboard.portfolio.positions || []);
     updateStreamStatus();
@@ -1873,6 +1917,13 @@ function formatQuantity(value) {
 function setText(id, value) {
   const element = document.getElementById(id);
   if (element) element.textContent = value;
+}
+
+function setTone(id, tone = "") {
+  const element = document.getElementById(id);
+  if (!element) return;
+  element.classList.remove("positive", "negative", "caution", "info");
+  if (tone) element.classList.add(tone);
 }
 
 function shortTime(value) {

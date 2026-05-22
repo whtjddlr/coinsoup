@@ -1,11 +1,11 @@
 :root {
   color-scheme: dark;
-  --bg: #070b13;
-  --bg-2: #0b1220;
-  --card: #111827;
-  --card-2: #151f31;
-  --border: #273244;
-  --border-soft: rgba(148, 163, 184, 0.18);
+  --bg: #08090d;
+  --bg-2: #0e1117;
+  --card: #11151b;
+  --card-2: #171c24;
+  --border: #2c333d;
+  --border-soft: rgba(148, 163, 184, 0.2);
   --text: #e5e7eb;
   --muted: #94a3b8;
   --muted-2: #64748b;
@@ -29,10 +29,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
-  background:
-    radial-gradient(circle at 20% 0%, rgba(59, 130, 246, 0.16), transparent 28%),
-    radial-gradient(circle at 90% 10%, rgba(139, 92, 246, 0.14), transparent 25%),
-    linear-gradient(180deg, #07101f 0%, var(--bg) 60%, #05070d 100%);
+  background: linear-gradient(180deg, #0b0d12 0%, var(--bg) 52%, #050609 100%);
   color: var(--text);
   font-family: "Pretendard", "Inter", -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif;
   letter-spacing: 0;
@@ -46,11 +43,19 @@ input {
 
 button {
   cursor: pointer;
+  transition: border-color 0.16s ease, background 0.16s ease, color 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
 }
 
 button:disabled {
   cursor: not-allowed;
   opacity: 0.48;
+}
+
+button:focus-visible,
+input:focus-visible,
+.nav a:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.82);
+  outline-offset: 2px;
 }
 
 .app {
@@ -71,7 +76,7 @@ button:disabled {
   min-height: 52px;
   padding: 0 12px;
   border-bottom: 1px solid var(--border-soft);
-  background: rgba(7, 11, 19, 0.82);
+  background: rgba(8, 9, 13, 0.88);
   backdrop-filter: blur(18px);
 }
 
@@ -241,7 +246,7 @@ h1 {
   overflow-y: auto;
   padding: 10px 10px 20px;
   border-right: 1px solid var(--border-soft);
-  background: rgba(7, 11, 19, 0.72);
+  background: rgba(9, 11, 16, 0.82);
 }
 
 .nav {
@@ -261,14 +266,14 @@ h1 {
 
 .nav a.active,
 .nav a:hover {
-  background: rgba(59, 130, 246, 0.18);
+  background: rgba(56, 189, 248, 0.14);
   color: #bfdbfe;
 }
 
 .mini-card,
 .panel {
   border: 1px solid var(--border-soft);
-  background: linear-gradient(180deg, rgba(17, 24, 39, 0.92), rgba(15, 23, 42, 0.78));
+  background: linear-gradient(180deg, rgba(20, 24, 31, 0.96), rgba(13, 16, 22, 0.9));
   border-radius: var(--radius);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
 }
@@ -385,6 +390,70 @@ h1 {
   flex-wrap: wrap;
 }
 
+.session-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.status-tile {
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  align-content: center;
+  gap: 5px;
+  min-height: 84px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(22, 26, 34, 0.96), rgba(13, 16, 22, 0.9));
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+}
+
+.status-tile::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.45);
+}
+
+.status-tile span,
+.status-tile small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.status-tile strong {
+  color: #f8fafc;
+  font-size: 22px;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+.status-tile strong.positive,
+.status-tile strong.negative,
+.status-tile strong.caution {
+  font-size: 22px;
+}
+
+.status-tile:has(.positive)::before {
+  background: var(--green);
+}
+
+.status-tile:has(.negative)::before {
+  background: var(--red);
+}
+
+.status-tile:has(.caution)::before {
+  background: var(--yellow);
+}
+
 .tab {
   padding: 8px 14px;
 }
@@ -395,9 +464,41 @@ h1 {
   box-shadow: inset 0 0 0 3px rgba(59, 130, 246, 0.13);
 }
 
+.tab:hover,
+.tool-btn:hover,
+.secondary-btn:hover,
+.stream-pill:hover,
+.gear-btn:hover,
+.button-row button:hover {
+  border-color: rgba(148, 163, 184, 0.42);
+  background: rgba(28, 33, 43, 0.92);
+}
+
 .risk-state b {
   color: #86efac;
   background: rgba(34, 197, 94, 0.18);
+}
+
+.status-tile,
+.holding-card,
+.trade-card,
+.trade-summary-card,
+.book-return,
+.period-return,
+.settings-card {
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.status-tile:hover,
+.holding-card:hover,
+.trade-card:hover,
+.trade-summary-card:hover,
+.book-return:hover,
+.period-return:hover,
+.settings-card:hover,
+.asset-card:hover {
+  border-color: rgba(148, 163, 184, 0.36);
+  transform: translateY(-1px);
 }
 
 .portfolio-overview {
@@ -413,7 +514,7 @@ h1 {
 .holding-empty {
   border: 1px solid var(--border-soft);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.86);
+  background: rgba(18, 22, 29, 0.9);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.18);
 }
 
@@ -433,17 +534,17 @@ h1 {
   padding: 12px;
   border: 1px solid rgba(148, 163, 184, 0.12);
   border-radius: 7px;
-  background: rgba(2, 6, 23, 0.28);
+  background: rgba(8, 10, 15, 0.42);
 }
 
 .pnl-focus {
   border-color: rgba(248, 113, 113, 0.32);
-  background: linear-gradient(180deg, rgba(127, 29, 29, 0.22), rgba(2, 6, 23, 0.2));
+  background: linear-gradient(180deg, rgba(127, 29, 29, 0.2), rgba(8, 10, 15, 0.32));
 }
 
 .pnl-focus.positive {
   border-color: rgba(34, 197, 94, 0.32);
-  background: linear-gradient(180deg, rgba(20, 83, 45, 0.24), rgba(2, 6, 23, 0.2));
+  background: linear-gradient(180deg, rgba(20, 83, 45, 0.22), rgba(8, 10, 15, 0.32));
 }
 
 .pnl-focus.negative {
@@ -497,7 +598,7 @@ h1 {
   padding: 10px;
   border: 1px solid rgba(148, 163, 184, 0.12);
   border-radius: 7px;
-  background: rgba(2, 6, 23, 0.28);
+  background: rgba(8, 10, 15, 0.42);
 }
 
 .summary-metrics strong,
@@ -575,7 +676,7 @@ h1 {
   padding: 9px 10px;
   border: 1px solid rgba(148, 163, 184, 0.12);
   border-radius: 7px;
-  background: rgba(2, 6, 23, 0.28);
+  background: rgba(8, 10, 15, 0.42);
 }
 
 .allocation-row span {
@@ -726,7 +827,7 @@ h1 {
   padding: 12px;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
-  background: linear-gradient(180deg, rgba(17, 24, 39, 0.96), rgba(15, 23, 42, 0.82));
+  background: linear-gradient(180deg, rgba(21, 25, 33, 0.98), rgba(13, 16, 22, 0.92));
   color: inherit;
   text-align: left;
   cursor: pointer;
@@ -737,14 +838,29 @@ h1 {
   content: "";
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 10% 0%, rgba(59, 130, 246, 0.12), transparent 34%);
+  background: linear-gradient(90deg, rgba(56, 189, 248, 0.08), transparent 38%);
   pointer-events: none;
 }
 
+.asset-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 999px;
+  background: transparent;
+}
+
 .asset-card.active {
-  border-color: rgba(59, 130, 246, 0.75);
-  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1), var(--shadow);
+  border-color: rgba(56, 189, 248, 0.78);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1), var(--shadow);
   transform: translateY(-1px);
+}
+
+.asset-card.active::after {
+  background: var(--cyan);
 }
 
 .asset-card.flash-up {
@@ -887,7 +1003,7 @@ h1 {
 .panel-head {
   padding: 11px 13px;
   border-bottom: 1px solid var(--border-soft);
-  background: rgba(15, 23, 42, 0.72);
+  background: rgba(18, 22, 29, 0.82);
 }
 
 .panel-head h2 {
@@ -940,7 +1056,7 @@ h1 {
   background:
     linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px),
     linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px),
-    radial-gradient(circle at 50% 10%, rgba(59, 130, 246, 0.08), transparent 30%);
+    linear-gradient(180deg, rgba(12, 15, 20, 0.9), rgba(9, 11, 16, 0.96));
   background-size: 100% 54px, 72px 100%, auto;
 }
 
@@ -1235,17 +1351,18 @@ h1 {
 
 .final-box {
   padding: 13px;
-  border: 1px solid rgba(59, 130, 246, 0.22);
-  border-radius: 13px;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.15), rgba(139, 92, 246, 0.1));
+  border: 1px solid rgba(56, 189, 248, 0.26);
+  border-left: 3px solid rgba(56, 189, 248, 0.78);
+  border-radius: 8px;
+  background: linear-gradient(180deg, rgba(19, 29, 38, 0.88), rgba(13, 16, 22, 0.92));
 }
 
 .final-decision {
   display: inline-flex;
   margin-bottom: 10px;
   padding: 7px 12px;
-  border-radius: 9px;
-  background: rgba(59, 130, 246, 0.22);
+  border-radius: 7px;
+  background: rgba(56, 189, 248, 0.16);
   color: #bfdbfe;
   font-weight: 900;
 }
@@ -1371,7 +1488,7 @@ h1 {
   padding: 0 10px;
   border: 1px solid var(--border-soft);
   border-radius: 9px;
-  background: rgba(15, 23, 42, 0.9);
+  background: rgba(10, 13, 18, 0.92);
   color: var(--text);
 }
 
@@ -1417,7 +1534,7 @@ h1 {
   padding: 3px;
   border: 1px solid var(--border-soft);
   border-radius: 8px;
-  background: rgba(2, 6, 23, 0.32);
+  background: rgba(8, 10, 15, 0.42);
 }
 
 .segmented button {
@@ -1448,7 +1565,7 @@ h1 {
 .trade-empty {
   border: 1px solid var(--border-soft);
   border-radius: 8px;
-  background: rgba(15, 23, 42, 0.72);
+  background: rgba(18, 22, 29, 0.76);
 }
 
 .trade-summary-card {
@@ -1797,6 +1914,10 @@ th {
     grid-template-columns: 1fr;
   }
 
+  .session-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .holding-cards {
     grid-template-columns: repeat(2, minmax(180px, 1fr));
   }
@@ -1847,6 +1968,7 @@ th {
   }
 
   .asset-grid,
+  .session-strip,
   .risk-grid,
   .mtf-grid,
   .book-returns,
