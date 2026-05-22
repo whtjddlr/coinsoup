@@ -83,6 +83,28 @@
       "compare_leverage": 5,
       "max_leverage": 5
     },
+    "futures_paper": {
+      "enabled": true,
+      "dry_run_only": true,
+      "seed_krw": "1000000",
+      "seed_usdt": "671.59167226",
+      "seed_usdt_krw_rate": "1489",
+      "symbols": ["BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT"],
+      "leverage": 3,
+      "max_leverage": 5,
+      "max_positions": 2,
+      "margin_per_trade_pct": 30,
+      "max_total_margin_pct": 70,
+      "min_margin_usdt": 15,
+      "min_signal_score": 48,
+      "force_seed_entry": true,
+      "take_profit_underlying_pct": "1.6",
+      "stop_loss_underlying_pct": "1.2",
+      "reversal_exit_score_gap": 28,
+      "fee_rate": "0.0004",
+      "slippage_pct": "0.0005",
+      "allow_short": true
+    },
     "execution_policy": {
       "phase_sequence": ["shadow", "order-intent", "test/demo", "micro-live"],
       "current_phase": "dry-run",
@@ -117,7 +139,7 @@
       "major_level_delay_minutes": 5,
       "daily_analysis_time_kst": "09:10",
       "paper_plan_time_kst": "09:12",
-      "paper_plan_enabled": true,
+      "paper_plan_enabled": false,
       "level_timeframes": ["5m", "15m", "1h", "4h", "1d", "1w"],
       "venues": ["upbit", "binance", "binance_futures"],
       "snapshot_dir": "data/snapshots",
@@ -132,8 +154,9 @@
       "bear_rebound_strategy_name": "bear_rebound_aggressive_test",
       "bear_rebound_budget_krw": "100000",
       "bear_rebound_max_candidates": 4,
-      "chart_trade_test_enabled": true,
+      "chart_trade_test_enabled": false,
       "chart_trade_check_minutes": 5,
+      "futures_paper_check_minutes": 5,
       "chart_trade_strategy_name": "chart_aggressive_test",
       "chart_trade_buy_budget_krw": "100000",
       "chart_trade_max_candidates": 4,
@@ -157,17 +180,20 @@
   },
   "portfolio": {
     "starting_cash": {
-      "upbit:KRW": "1000000",
-      "binance:USDT": "0"
+      "upbit:KRW": "0",
+      "binance:USDT": "0",
+      "binance_futures:USDT": "671.59167226"
     },
     "starting_positions": {},
     "fee_rate": {
       "upbit": "0.0005",
-      "binance": "0.001"
+      "binance": "0.001",
+      "binance_futures": "0.0004"
     },
     "slippage_pct": {
       "upbit": "0.0005",
-      "binance": "0.0005"
+      "binance": "0.0005",
+      "binance_futures": "0.0005"
     }
   },
   "exchanges": {
@@ -212,6 +238,14 @@
           "min_quote_budget": "5"
         }
       ]
+    },
+    "binance_futures": {
+      "enabled": true,
+      "base_url": "https://fapi.binance.com",
+      "quote_currency": "USDT",
+      "default_min_quote_budget": "5",
+      "max_quote_budget_per_run": "1000",
+      "orders": []
     }
   },
   "output": {

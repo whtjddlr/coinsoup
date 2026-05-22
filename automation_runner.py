@@ -21,6 +21,7 @@ from paper_app import (
     ROOT,
     build_candle_payload,
     build_dashboard,
+    handle_run_futures_paper_test,
     handle_run_chart_trade_test,
     handle_run_plan,
     handle_run_rebound_test,
@@ -47,6 +48,7 @@ DEFAULT_AUTOMATION = {
     "supervisor_lock_on_risk_regimes": ["bear", "crash", "overheated"],
     "bear_rebound_check_minutes": 5,
     "chart_trade_check_minutes": 5,
+    "futures_paper_check_minutes": 5,
 }
 
 
@@ -73,7 +75,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--tasks",
         default="dashboard,levels,status",
-        help="Comma-separated tasks: due,dashboard,levels,supervisor,rebound,chart,plan,status",
+        help="Comma-separated tasks: due,dashboard,levels,supervisor,rebound,chart,futures,plan,status",
     )
     parser.add_argument("--loop", action="store_true", help="Run scheduler loop until stopped.")
     parser.add_argument(
@@ -124,6 +126,7 @@ def run_loop(settings: dict[str, Any], task_spec: str, duration_minutes: float =
     last_supervisor_slot: datetime | None = None
     last_rebound_slot: datetime | None = None
     last_chart_slot: datetime | None = None
+    last_futures_slot: datetime | None = None
     last_plan_date = ""
     requested = parse_tasks(task_spec)
     poll_seconds = int(settings["loop_poll_seconds"])
@@ -184,6 +187,12 @@ def run_loop(settings: dict[str, Any], task_spec: str, duration_minutes: float =
                 if slot != last_chart_slot:
                     tasks.append("chart")
                     last_chart_slot = slot
+            if "due" in requested or "futures" in requested:
+                interval = int(settings.get("futures_paper_check_minutes", 5))
+                slot = current_slot(now, interval)
+                if slot != last_futures_slot:
+                    tasks.append("futures")
+                    last_futures_slot = slot
             if ("due" in requested or "plan" in requested) and should_run_plan(now, settings, last_plan_date):
                 tasks.append("plan")
                 last_plan_date = now.strftime("%Y-%m-%d")
@@ -345,6 +354,18 @@ def run_tasks(tasks: list[str], settings: dict[str, Any]) -> dict[str, Any]:
                         "chart trade test "
                         f"buy={payload.get('buy_simulated_count', 0)} "
                         f"sell={payload.get('sell_simulated_count', 0)} "
+                        f"skipped={payload.get('skipped_count', 0)}"
+                    )
+                result["tasks"].append({"task": task, "ok": bool(payload.get("ok")), "summary": summary})
+            elif task == "futures":
+                payload = handle_run_futures_paper_test()
+                write_json(settings["snapshot_dir"] / "last_futures_paper_result.json", payload)
+                if not payload.get("enabled", True):
+                    summary = "futures paper disabled"
+                else:
+                    summary = (
+                        "futures paper "
+                        f"simulated={payload.get('simulated_count', 0)} "
                         f"skipped={payload.get('skipped_count', 0)}"
                     )
                 result["tasks"].append({"task": task, "ok": bool(payload.get("ok")), "summary": summary})
@@ -743,6 +764,7 @@ def next_schedule(settings: dict[str, Any]) -> dict[str, Any]:
     now = datetime.now(settings["timezone"])
     dashboard = next_slot(now, int(settings["dashboard_refresh_minutes"]))
     levels = next_slot(now, int(settings["support_resistance_refresh_minutes"]))
+    futures = next_slot(now, int(settings.get("futures_paper_check_minutes", 5)))
     target_hour, target_minute = parse_hhmm(str(settings["paper_plan_time_kst"]))
     plan = now.replace(hour=target_hour, minute=target_minute, second=0, microsecond=0)
     if plan <= now:
@@ -750,6 +772,7 @@ def next_schedule(settings: dict[str, Any]) -> dict[str, Any]:
     return {
         "dashboard_after": dashboard.isoformat(timespec="minutes"),
         "levels_after": levels.isoformat(timespec="minutes"),
+        "futures_paper_after": futures.isoformat(timespec="minutes"),
         "paper_plan_at": plan.isoformat(timespec="minutes"),
     }
 

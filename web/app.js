@@ -272,15 +272,17 @@ function compactRegimeText(regime = {}) {
 function renderSessionStrip(data) {
   const portfolio = data?.portfolio || {};
   const positions = portfolio.positions || [];
-  const equity = (portfolio.equity || [])[0] || {};
+  const equity = primaryEquityRow(portfolio);
+  const currency = equity.quote_currency || "KRW";
   const performanceTotal = data?.performance?.total || {};
   const cash = Number(equity.cash || 0);
   const realizedPnl = portfolioRealizedPnl(portfolio);
   const positionValue = positions.reduce((sum, position) => sum + Number(position.value || 0), 0);
-  const totalEquity = Number.isFinite(Number(performanceTotal.current_equity_krw))
+  const useKrwPerformance = currency === "KRW";
+  const totalEquity = useKrwPerformance && Number.isFinite(Number(performanceTotal.current_equity_krw))
     ? Number(performanceTotal.current_equity_krw)
     : Number(equity.total_equity || cash + positionValue);
-  const pnl = Number.isFinite(Number(performanceTotal.pnl_krw))
+  const pnl = useKrwPerformance && Number.isFinite(Number(performanceTotal.pnl_krw))
     ? Number(performanceTotal.pnl_krw)
     : Number(equity.unrealized_pnl || 0);
   const returnPct = Number.isFinite(Number(performanceTotal.return_pct))
@@ -289,13 +291,13 @@ function renderSessionStrip(data) {
   const pnlTone = pnl >= 0 ? "positive" : "negative";
   const realizedTone = realizedPnl >= 0 ? "positive" : "negative";
 
-  setText("sessionEquity", totalEquity > 0 ? `${moneyFormat.format(Math.round(totalEquity))} KRW` : "--");
-  setText("sessionEquityDetail", positions.length ? `${positions.length}종목 · 현금 ${moneyFormat.format(Math.round(cash))}` : "무보유");
-  setText("sessionPnl", formatSignedMoney(pnl, "KRW"));
+  setText("sessionEquity", totalEquity > 0 ? formatCurrencyAmount(totalEquity, currency) : "--");
+  setText("sessionEquityDetail", positions.length ? `${positions.length}종목 · 현금 ${formatCurrencyAmount(cash, currency)}` : "무보유");
+  setText("sessionPnl", formatSignedMoney(pnl, currency));
   setText("sessionPnlDetail", `시드 대비 ${formatPct(returnPct)}`);
   setTone("sessionPnl", pnlTone);
   setTone("sessionPnlDetail", pnlTone);
-  setText("sessionRealized", formatSignedMoney(realizedPnl, "KRW"));
+  setText("sessionRealized", formatSignedMoney(realizedPnl, currency));
   setText("sessionRealizedDetail", realizedPnl ? "매도 확정" : "매도 없음");
   setTone("sessionRealized", realizedTone);
   setTone("sessionRealizedDetail", realizedTone);
@@ -790,10 +792,18 @@ function renderEquity(rows) {
   document.getElementById("equityRows").innerHTML = rows.map((row) => `
     <div class="equity-row">
       <span>${row.exchange.toUpperCase()} ${row.quote_currency}</span>
-      <strong>${moneyFormat.format(Number(row.total_equity))}</strong>
-      <span>현금 ${moneyFormat.format(Number(row.cash))} · 손익 ${moneyFormat.format(Number(row.unrealized_pnl))}</span>
+      <strong>${formatCurrencyAmount(row.total_equity, row.quote_currency)}</strong>
+      <span>현금 ${formatCurrencyAmount(row.cash, row.quote_currency)} · 손익 ${formatSignedMoney(row.unrealized_pnl, row.quote_currency)}</span>
     </div>
   `).join("");
+}
+
+function primaryEquityRow(portfolio) {
+  const rows = portfolio?.equity || [];
+  return rows.find((row) => Number(row.total_equity || 0) > 0)
+    || rows.find((row) => row.exchange === "binance_futures")
+    || rows[0]
+    || {};
 }
 
 function portfolioRealizedPnl(portfolio) {
@@ -805,10 +815,11 @@ function portfolioRealizedPnl(portfolio) {
 function renderPortfolioOverview(portfolio, updatedAt = "", performance = null) {
   if (!portfolio) return;
   const positions = portfolio.positions || [];
-  const equity = (portfolio.equity || [])[0] || {};
+  const equity = primaryEquityRow(portfolio);
+  const currency = equity.quote_currency || "KRW";
   const cash = Number(equity.cash || 0);
   const positionValue = positions.reduce((sum, position) => sum + Number(position.value || 0), 0);
-  const totalEquity = cash + positionValue;
+  const totalEquity = Number(equity.total_equity || cash + positionValue);
   const costBasis = positions.reduce((sum, position) => {
     const quantity = Number(position.quantity || 0);
     const average = Number(position.average_price || 0);
@@ -818,7 +829,8 @@ function renderPortfolioOverview(portfolio, updatedAt = "", performance = null) 
   const realizedPnl = portfolioRealizedPnl(portfolio);
   const tradePnl = positionPnl + realizedPnl;
   const total = performance?.total || {};
-  const totalPnl = Number.isFinite(Number(total.pnl_krw))
+  const useKrwPerformance = currency === "KRW";
+  const totalPnl = useKrwPerformance && Number.isFinite(Number(total.pnl_krw))
     ? Number(total.pnl_krw)
     : Number(equity.unrealized_pnl || positionPnl);
   const returnPct = Number.isFinite(Number(total.return_pct))
@@ -835,7 +847,7 @@ function renderPortfolioOverview(portfolio, updatedAt = "", performance = null) 
   const pnlAmountEl = document.getElementById("overviewPnlAmount");
   if (pnlAmountEl) {
     pnlAmountEl.className = pnlClass;
-    pnlAmountEl.textContent = formatSignedMoney(totalPnl, "KRW");
+    pnlAmountEl.textContent = formatSignedMoney(totalPnl, currency);
   }
   const pnlDetailEl = document.getElementById("overviewPnlDetail");
   if (pnlDetailEl) {
@@ -850,24 +862,24 @@ function renderPortfolioOverview(portfolio, updatedAt = "", performance = null) 
   const realizedAmountEl = document.getElementById("overviewRealizedAmount");
   if (realizedAmountEl) {
     realizedAmountEl.className = realizedClass;
-    realizedAmountEl.textContent = formatSignedMoney(realizedPnl, "KRW");
+    realizedAmountEl.textContent = formatSignedMoney(realizedPnl, currency);
   }
   const realizedDetailEl = document.getElementById("overviewRealizedDetail");
   if (realizedDetailEl) {
     realizedDetailEl.className = `summary-return ${realizedClass}`;
-    realizedDetailEl.textContent = `${realizedPnl ? "매도 확정" : "매도 없음"} · 합산 ${formatSignedMoney(tradePnl, "KRW")}`;
+    realizedDetailEl.textContent = `${realizedPnl ? "매도 확정" : "매도 없음"} · 합산 ${formatSignedMoney(tradePnl, currency)}`;
   }
-  setText("overviewEquity", `${moneyFormat.format(Math.round(totalEquity))} KRW`);
+  setText("overviewEquity", formatCurrencyAmount(totalEquity, currency));
   const returnEl = document.getElementById("overviewReturn");
   if (returnEl) {
     returnEl.className = "summary-return";
     returnEl.textContent = `시드 대비 ${formatPct(returnPct)}`;
   }
-  setText("overviewCash", `${moneyFormat.format(Math.round(cash))} KRW`);
-  setText("overviewInvested", `${moneyFormat.format(Math.round(positionValue))} KRW`);
+  setText("overviewCash", formatCurrencyAmount(cash, currency));
+  setText("overviewInvested", formatCurrencyAmount(positionValue, currency));
   setText("overviewCount", `${positions.length}개`);
   setText("overviewFreshness", state.stream.enabled ? `실시간 ${lastTick}` : `기록 시점 ${shortTime(updatedAt).slice(11, 19)}`);
-  renderActualAllocation(positions, cash, totalEquity);
+  renderActualAllocation(positions, cash, totalEquity, currency);
 
   const cards = document.getElementById("holdingCards");
   if (!cards) return;
@@ -883,7 +895,7 @@ function renderPortfolioOverview(portfolio, updatedAt = "", performance = null) 
   cards.innerHTML = positions.map((position) => holdingCard(position, totalEquity)).join("");
 }
 
-function renderActualAllocation(positions, cash, totalEquity) {
+function renderActualAllocation(positions, cash, totalEquity, currency = "KRW") {
   const stack = document.getElementById("allocationStack");
   const list = document.getElementById("allocationList");
   if (!stack || !list) return;
@@ -895,7 +907,7 @@ function renderActualAllocation(positions, cash, totalEquity) {
   });
 
   const items = [
-    { symbol: "KRW", label: "현금", value: cash, className: "cash" },
+    { symbol: currency, label: "현금", value: cash, className: "cash" },
     ...streamAssets.map((asset) => {
       const position = positionBySymbol.get(asset.asset);
       return {
@@ -925,12 +937,13 @@ function renderActualAllocation(positions, cash, totalEquity) {
     <div class="allocation-row ${item.value > 0 ? "" : "is-empty"}">
       <span><i class="coin-dot ${item.className}"></i>${item.label}</span>
       <strong>${formatWeightPct(item.pct)}</strong>
-      <b>${moneyFormat.format(Math.round(item.value))} KRW</b>
+      <b>${formatCurrencyAmount(item.value, currency)}</b>
     </div>
   `).join("");
 }
 
 function holdingCard(position, totalEquity) {
+  const quoteCurrency = position.quote_currency || "KRW";
   const quantity = Number(position.quantity || 0);
   const average = Number(position.average_price || 0);
   const costBasis = Number(position.cost_basis || quantity * average || 0);
@@ -942,19 +955,22 @@ function holdingCard(position, totalEquity) {
   const pnlClass = pnl >= 0 ? "positive" : "negative";
   const realizedClass = realizedPnl >= 0 ? "positive" : "negative";
   const pnlTone = pnl > 0 ? "수익" : pnl < 0 ? "손실" : "보합";
-  const displaySymbol = position.instrument.replace("KRW-", "");
+  const displaySymbol = position.instrument.replace("KRW-", "").replace("USDT", "");
+  const sideLabel = position.exchange === "binance_futures"
+    ? ` · ${position.side || "LONG"} ${formatLeverage(position.leverage || 1)}`
+    : "";
   return `
     <article class="holding-card">
       <div class="holding-head">
         <div>
           <span>${position.exchange.toUpperCase()}</span>
-          <strong>${displaySymbol}</strong>
+          <strong>${displaySymbol}${sideLabel}</strong>
         </div>
         <b class="${pnlClass}">${formatPct(pnlPct)}</b>
       </div>
       <div class="holding-value">
-        <strong>${moneyFormat.format(Math.round(value))} KRW</strong>
-        <span class="${pnlClass}">${pnlTone} ${formatSignedMoney(pnl, "KRW")}</span>
+        <strong>${formatCurrencyAmount(value, quoteCurrency)}</strong>
+        <span class="${pnlClass}">${pnlTone} ${formatSignedMoney(pnl, quoteCurrency)}</span>
       </div>
       <div class="holding-bars">
         <span style="width: ${Math.min(Math.max(weight, 0), 100)}%"></span>
@@ -964,7 +980,7 @@ function holdingCard(position, totalEquity) {
         <span>수량 <b>${formatQuantity(quantity)}</b></span>
         <span>평균 <b>${formatPrice(average)}</b></span>
         <span>현재 <b>${formatPrice(position.current_price)}</b></span>
-        <span>실현 <b class="${realizedClass}">${formatSignedMoney(realizedPnl, "KRW")}</b></span>
+        <span>실현 <b class="${realizedClass}">${formatSignedMoney(realizedPnl, quoteCurrency)}</b></span>
       </div>
     </article>
   `;
@@ -977,6 +993,7 @@ function renderPositions(positions) {
     return;
   }
   body.innerHTML = positions.map((position) => {
+    const quoteCurrency = position.quote_currency || "KRW";
     const pnlClass = Number(position.unrealized_pnl) >= 0 ? "positive" : "negative";
     const realizedClass = Number(position.realized_pnl || 0) >= 0 ? "positive" : "negative";
     const quantity = Number(position.quantity || 0);
@@ -989,11 +1006,11 @@ function renderPositions(positions) {
         <td>${formatQuantity(quantity)}</td>
         <td>${formatPrice(position.average_price)}</td>
         <td>${formatPrice(position.current_price)}</td>
-        <td>${moneyFormat.format(position.value)}</td>
-        <td class="${pnlClass} pnl-cell">${formatSignedMoney(position.unrealized_pnl, "KRW")}</td>
-        <td class="${realizedClass} pnl-cell">${formatSignedMoney(position.realized_pnl, "KRW")}</td>
+        <td>${formatCurrencyAmount(position.value, quoteCurrency)}</td>
+        <td class="${pnlClass} pnl-cell">${formatSignedMoney(position.unrealized_pnl, quoteCurrency)}</td>
+        <td class="${realizedClass} pnl-cell">${formatSignedMoney(position.realized_pnl, quoteCurrency)}</td>
         <td class="${pnlClass}">${formatPct(pnlPct)}</td>
-        <td>${moneyFormat.format(costBasis)}</td>
+        <td>${formatCurrencyAmount(costBasis, quoteCurrency)}</td>
       </tr>
     `;
   }).join("");
@@ -1112,24 +1129,22 @@ function renderTradeSummary(trades, root) {
   const simulated = trades.filter((trade) => trade.status === "simulated");
   const buys = simulated.filter((trade) => trade.side === "buy");
   const sells = simulated.filter((trade) => trade.side === "sell");
-  const buyTotal = buys.reduce((sum, trade) => sum + Number(trade.executed_quote_value || 0), 0);
-  const sellTotal = sells.reduce((sum, trade) => sum + Number(trade.executed_quote_value || 0), 0);
   const realized = sells.reduce((sum, trade) => sum + Number(trade.realized_pnl || 0), 0);
   const feeSummary = tradeFeeSummary(simulated);
   root.innerHTML = `
     <div class="trade-summary-card buy">
       <span>가상 매수</span>
-      <strong>${moneyFormat.format(Math.round(buyTotal))} KRW</strong>
+      <strong>${tradeAmountSummary(buys, "executed_quote_value")}</strong>
       <b>${buys.length}건</b>
     </div>
     <div class="trade-summary-card sell">
       <span>가상 매도</span>
-      <strong>${moneyFormat.format(Math.round(sellTotal))} KRW</strong>
+      <strong>${tradeAmountSummary(sells, "executed_quote_value")}</strong>
       <b>${sells.length}건</b>
     </div>
     <div class="trade-summary-card ${realized >= 0 ? "positive-card" : "negative-card"}">
       <span>확정 손익</span>
-      <strong>${formatSignedMoney(realized, "KRW")}</strong>
+      <strong>${tradeAmountSummary(sells, "realized_pnl", true)}</strong>
       <b>${sells.length ? "실현손익" : "매도 없음"}</b>
     </div>
     <div class="trade-summary-card muted-card">
@@ -1169,7 +1184,19 @@ function tradeExecutedAmount(trade) {
   if (trade.status === "skipped") return "체결 없음";
   const value = Number(trade.executed_quote_value || trade.requested_quote_budget || 0);
   if (!value) return "--";
-  return `${moneyFormat.format(Math.round(value))} ${trade.quote_currency || "KRW"}`;
+  return formatCurrencyAmount(value, trade.quote_currency || "KRW");
+}
+
+function tradeAmountSummary(trades, field, signed = false) {
+  const totals = new Map();
+  trades.forEach((trade) => {
+    const currency = trade.quote_currency || "KRW";
+    totals.set(currency, (totals.get(currency) || 0) + Number(trade[field] || 0));
+  });
+  if (!totals.size) return signed ? formatSignedMoney(0, "KRW") : "--";
+  return Array.from(totals.entries()).map(([currency, value]) => (
+    signed ? formatSignedMoney(value, currency) : formatCurrencyAmount(value, currency)
+  )).join(" / ");
 }
 
 function tradeFeeAmount(trade) {

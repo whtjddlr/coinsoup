@@ -454,6 +454,8 @@ def fetch_prices(
             prices.update(fetch_upbit_prices(exchange_config["base_url"], unique_instruments, timeout))
         elif exchange == "binance":
             prices.update(fetch_binance_prices(exchange_config["base_url"], unique_instruments, timeout))
+        elif exchange == "binance_futures":
+            prices.update(fetch_binance_futures_prices(exchange_config["base_url"], unique_instruments, timeout))
         else:
             raise SystemExit(f"Unsupported exchange: {exchange}")
     return prices
@@ -486,6 +488,22 @@ def fetch_binance_prices(
             raise SystemExit(f"Unexpected Binance ticker response for {symbol}.")
         prices[("binance", str(payload["symbol"]))] = parse_decimal(
             payload["price"], f"binance.{symbol}.price"
+        )
+        time.sleep(0.05)
+    return prices
+
+
+def fetch_binance_futures_prices(
+    base_url: str, symbols: list[str], timeout: float
+) -> dict[tuple[str, str], Decimal]:
+    prices: dict[tuple[str, str], Decimal] = {}
+    url = f"{base_url.rstrip('/')}/fapi/v1/ticker/price"
+    for symbol in symbols:
+        payload = http_get_json(url, {"symbol": symbol}, timeout)
+        if not isinstance(payload, dict):
+            raise SystemExit(f"Unexpected Binance Futures ticker response for {symbol}.")
+        prices[("binance_futures", str(payload["symbol"]))] = parse_decimal(
+            payload["price"], f"binance_futures.{symbol}.price"
         )
         time.sleep(0.05)
     return prices
@@ -728,8 +746,21 @@ def build_equity_rows(
             price = prices.get((exchange_name, instrument))
             if price is None:
                 continue
-            position_value += quantity * price
-            cost_basis += decimal_from_mapping(position, "cost_basis")
+            if exchange_name == "binance_futures":
+                margin = decimal_from_mapping(position, "margin")
+                entry_price = decimal_from_mapping(position, "entry_price")
+                side = str(position.get("side", "LONG")).upper()
+                if entry_price <= 0:
+                    continue
+                if side == "SHORT":
+                    unrealized = (entry_price - price) * quantity
+                else:
+                    unrealized = (price - entry_price) * quantity
+                position_value += margin + unrealized
+                cost_basis += margin
+            else:
+                position_value += quantity * price
+                cost_basis += decimal_from_mapping(position, "cost_basis")
 
         total_equity = cash_balance + position_value
         unrealized_pnl = position_value - cost_basis

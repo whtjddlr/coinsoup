@@ -15,7 +15,7 @@ import mimetypes
 import sys
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_DOWN
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -26,7 +26,10 @@ from zoneinfo import ZoneInfo
 
 from dryrun_bot import (
     PlannedOrder,
+    SimulatedOrder,
     build_equity_rows,
+    cash_state_key,
+    decimal_from_mapping,
     ensure_portfolio,
     enforce_paper_mode,
     fetch_prices,
@@ -36,6 +39,7 @@ from dryrun_bot import (
     parse_decimal,
     save_state,
     simulate_orders,
+    position_state_key,
     write_equity,
     write_orders,
 )
@@ -114,6 +118,26 @@ DEFAULT_PAPER_LEVERAGE_TEST = {
     "default_leverage": 3,
     "compare_leverage": 5,
     "max_leverage": 5,
+}
+
+DEFAULT_FUTURES_PAPER = {
+    "enabled": False,
+    "dry_run_only": True,
+    "symbols": ["BTCUSDT", "ETHUSDT", "XRPUSDT", "SOLUSDT"],
+    "leverage": 3,
+    "max_leverage": 5,
+    "max_positions": 2,
+    "margin_per_trade_pct": 30,
+    "max_total_margin_pct": 70,
+    "min_margin_usdt": 15,
+    "min_signal_score": 48,
+    "force_seed_entry": True,
+    "take_profit_underlying_pct": 1.6,
+    "stop_loss_underlying_pct": 1.2,
+    "reversal_exit_score_gap": 28,
+    "fee_rate": "0.0004",
+    "slippage_pct": "0.0005",
+    "allow_short": True,
 }
 
 ASSETS = [
@@ -305,6 +329,7 @@ def build_dashboard() -> dict[str, Any]:
         "book_policy": book_policy_payload(config),
         "execution_policy": execution_policy_payload(config),
         "paper_leverage_test": paper_leverage_test_payload(config),
+        "futures_paper": futures_paper_payload(config, state),
         "deployment": {
             "stage": config.get("strategy", {}).get("deployment_stage", "dry-run"),
             "sequence": config.get("strategy", {}).get("execution_policy", {}).get(
@@ -479,6 +504,29 @@ def paper_leverage_test_payload(config: dict[str, Any]) -> dict[str, Any]:
         "max_leverage": max_leverage,
         "mode": "paper_only",
     }
+
+
+def futures_paper_payload(config: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
+    raw = futures_paper_settings(config)
+    positions = [
+        key.split(":", 1)[1]
+        for key, value in state.get("portfolio", {}).get("positions", {}).items()
+        if key.startswith("binance_futures:") and float(value.get("quantity", 0) or 0) > 0
+    ]
+    return {
+        "enabled": bool(raw.get("enabled", False)),
+        "dry_run_only": bool(raw.get("dry_run_only", True)),
+        "symbols": list(raw.get("symbols", DEFAULT_FUTURES_PAPER["symbols"])),
+        "leverage": int(raw.get("leverage", 3)),
+        "max_leverage": int(raw.get("max_leverage", 5)),
+        "max_positions": int(raw.get("max_positions", 2)),
+        "open_positions": positions,
+        "mode": "paper_only",
+    }
+
+
+def futures_paper_settings(config: dict[str, Any]) -> dict[str, Any]:
+    return {**DEFAULT_FUTURES_PAPER, **config.get("strategy", {}).get("futures_paper", {})}
 
 
 def load_runtime() -> tuple[dict[str, Any], dict[str, Any]]:
@@ -973,6 +1021,524 @@ def handle_run_chart_trade_test() -> dict[str, Any]:
     }
 
 
+def handle_run_futures_paper_test() -> dict[str, Any]:
+    config, state = load_runtime()
+    now = datetime.now(KST)
+    settings = futures_paper_settings(config)
+    if not bool(settings.get("enabled", False)):
+        return {"ok": True, "enabled": False, "orders": [], "simulated_count": 0, "skipped_count": 0}
+    if not bool(settings.get("dry_run_only", True)):
+        return {"ok": False, "enabled": True, "error": "futures paper must stay dry_run_only"}
+
+    exchange_config = config.get("exchanges", {}).get("binance_futures", {})
+    if not exchange_config.get("enabled", False):
+        return {"ok": False, "enabled": True, "error": "binance_futures exchange is not enabled for paper"}
+
+    symbols = list(settings.get("symbols", DEFAULT_FUTURES_PAPER["symbols"]))
+    prices = prices_for_futures_symbols(config, state, symbols)
+    candidates = futures_paper_candidates(symbols, settings)
+    candidate_by_symbol = {candidate["symbol"]: candidate for candidate in candidates}
+    simulated: list[SimulatedOrder] = []
+    exit_decisions: list[dict[str, Any]] = []
+
+    for key, raw in list(state.get("portfolio", {}).get("positions", {}).items()):
+        exchange, symbol = key.split(":", 1)
+        if exchange != "binance_futures" or decimal_from_mapping(raw, "quantity") <= 0:
+            continue
+        price = prices.get(("binance_futures", symbol))
+        if price is None:
+            exit_decisions.append({"symbol": symbol, "action": "hold", "reason": "price_unavailable"})
+            continue
+        order, decision = maybe_close_futures_position(
+            state=state,
+            symbol=symbol,
+            raw=raw,
+            price=price,
+            candidate=candidate_by_symbol.get(symbol, {}),
+            settings=settings,
+            now=now,
+        )
+        exit_decisions.append(decision)
+        if order is not None:
+            simulated.append(order)
+
+    entry_decisions = futures_paper_entries(
+        state=state,
+        prices=prices,
+        candidates=candidates,
+        settings=settings,
+        now=now,
+    )
+    simulated.extend([entry["order"] for entry in entry_decisions if entry.get("order") is not None])
+
+    equity_rows = build_equity_rows(state, config, prices, now)
+    output = config["output"]
+    if simulated:
+        write_orders(ROOT / output["trades_csv"], simulated)
+    write_equity(ROOT / output["equity_csv"], equity_rows)
+    state["futures_paper"] = {
+        **state.get("futures_paper", {}),
+        "last_run_at": now.isoformat(timespec="seconds"),
+        "mode": "paper_only",
+        "leverage": str(settings.get("leverage", 3)),
+    }
+    save_state(ROOT / output["state_json"], state)
+    return {
+        "ok": True,
+        "enabled": True,
+        "locked": False,
+        "orders": [order_row(order) for order in simulated],
+        "candidates": candidates,
+        "entry_decisions": [{key: value for key, value in row.items() if key != "order"} for row in entry_decisions],
+        "exit_decisions": exit_decisions,
+        "simulated_count": len([order for order in simulated if order.status == "simulated"]),
+        "skipped_count": len([order for order in simulated if order.status == "skipped"]),
+        "equity": equity_rows,
+        "safety": {
+            "paper_mode": True,
+            "live_orders": False,
+            "api_keys": False,
+            "withdrawals": False,
+        },
+    }
+
+
+def prices_for_futures_symbols(
+    config: dict[str, Any],
+    state: dict[str, Any],
+    symbols: list[str],
+) -> dict[tuple[str, str], Decimal]:
+    quote_currency = config["exchanges"]["binance_futures"]["quote_currency"]
+    pseudo_orders = [
+        PlannedOrder(
+            exchange="binance_futures",
+            instrument=symbol,
+            side="buy",
+            quote_currency=quote_currency,
+            quote_budget=Decimal("1"),
+            base_quantity=None,
+            sell_fraction=None,
+            min_quote_budget=Decimal("0.00000001"),
+            source="manual",
+        )
+        for symbol in symbols
+    ]
+    for key in state.get("portfolio", {}).get("positions", {}):
+        exchange, instrument = key.split(":", 1)
+        if exchange == "binance_futures" and instrument not in symbols:
+            pseudo_orders.append(
+                PlannedOrder(
+                    exchange="binance_futures",
+                    instrument=instrument,
+                    side="buy",
+                    quote_currency=quote_currency,
+                    quote_budget=Decimal("1"),
+                    base_quantity=None,
+                    sell_fraction=None,
+                    min_quote_budget=Decimal("0.00000001"),
+                    source="manual",
+                )
+            )
+    return fetch_prices(config, pseudo_orders, state, HTTP_TIMEOUT)
+
+
+def futures_paper_candidates(symbols: list[str], settings: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates = [futures_paper_signal(symbol, settings) for symbol in symbols]
+    candidates.sort(key=lambda row: (row["raw_score"], row["score_gap"]), reverse=True)
+    return candidates
+
+
+def futures_paper_signal(symbol: str, settings: dict[str, Any]) -> dict[str, Any]:
+    timeframes = ["5m", "15m", "1h", "4h"]
+    weights = {"5m": 1.0, "15m": 1.1, "1h": 1.25, "4h": 1.35}
+    long_score = 0.0
+    short_score = 0.0
+    rows: list[dict[str, Any]] = []
+    reasons: list[str] = []
+
+    for timeframe in timeframes:
+        payload = build_candle_payload("binance_futures", symbol, timeframe)
+        indicators = payload.get("indicators", {})
+        levels = payload.get("levels", {})
+        close = safe_float(indicators.get("close"))
+        ema20_value = safe_float(indicators.get("ema20"))
+        ema50_value = safe_float(indicators.get("ema50"))
+        rsi_value = safe_float(indicators.get("rsi"))
+        volume_ratio = safe_float(indicators.get("volume_ratio"))
+        support_distance = safe_float(levels.get("support_distance_pct"))
+        resistance_distance = safe_float(levels.get("resistance_distance_pct"))
+        candles = payload.get("candles", [])
+        previous_close = candles[-2]["close"] if len(candles) >= 2 else close
+        change = change_pct(previous_close, close) if previous_close else 0
+        weight = weights.get(timeframe, 1.0)
+
+        trend_up = close > 0 and close > ema20_value > ema50_value
+        trend_down = close > 0 and close < ema20_value < ema50_value
+        if trend_up:
+            long_score += 22 * weight
+        elif close > ema20_value:
+            long_score += 10 * weight
+        if trend_down:
+            short_score += 22 * weight
+        elif close < ema20_value:
+            short_score += 10 * weight
+
+        if support_distance <= 1.2:
+            long_score += 12 * weight
+        if resistance_distance <= 1.2:
+            short_score += 12 * weight
+        if resistance_distance >= 0.8:
+            long_score += 5 * weight
+        if support_distance >= 0.8:
+            short_score += 5 * weight
+
+        if rsi_value < 35:
+            long_score += 12 * weight
+        elif rsi_value > 65:
+            short_score += 12 * weight
+        elif 38 <= rsi_value <= 63:
+            long_score += 5 * weight
+            short_score += 5 * weight
+
+        if volume_ratio >= 1.0:
+            if change >= 0:
+                long_score += 7 * weight
+            else:
+                short_score += 7 * weight
+
+        if change > 0:
+            long_score += 3 * weight
+        elif change < 0:
+            short_score += 3 * weight
+
+        rows.append(
+            {
+                "timeframe": timeframe,
+                "close": round(close, 8),
+                "change_pct": round(change, 3),
+                "trend": "up" if trend_up else "down" if trend_down else "mixed",
+                "rsi": round(rsi_value, 2),
+                "volume_ratio": round(volume_ratio, 2),
+                "support_distance_pct": round(support_distance, 2),
+                "resistance_distance_pct": round(resistance_distance, 2),
+            }
+        )
+
+    allow_short = bool(settings.get("allow_short", True))
+    action = "LONG"
+    raw_score = long_score
+    opposite_score = short_score
+    if allow_short and short_score > long_score:
+        action = "SHORT"
+        raw_score = short_score
+        opposite_score = long_score
+    score = round(max(0.0, min(raw_score, 100.0)), 1)
+    if score < float(settings.get("min_signal_score", 48)):
+        action = "WAIT"
+    dominant = rows[-1] if rows else {}
+    if action == "LONG":
+        reasons.append("support/rebound setup")
+    elif action == "SHORT":
+        reasons.append("resistance/weakness setup")
+    else:
+        reasons.append("no clear edge")
+    if dominant:
+        reasons.append(f"4h {dominant.get('trend')} rsi {dominant.get('rsi')}")
+    return {
+        "symbol": symbol,
+        "action": action,
+        "score": score,
+        "raw_score": round(raw_score, 1),
+        "long_score": round(long_score, 1),
+        "short_score": round(short_score, 1),
+        "score_gap": round(abs(raw_score - opposite_score), 1),
+        "price": rows[0]["close"] if rows else 0,
+        "reason": ", ".join(reasons),
+        "timeframes": rows,
+    }
+
+
+def maybe_close_futures_position(
+    state: dict[str, Any],
+    symbol: str,
+    raw: dict[str, Any],
+    price: Decimal,
+    candidate: dict[str, Any],
+    settings: dict[str, Any],
+    now: datetime,
+) -> tuple[SimulatedOrder | None, dict[str, Any]]:
+    side = str(raw.get("side", "LONG")).upper()
+    entry_price = decimal_from_mapping(raw, "entry_price")
+    quantity = decimal_from_mapping(raw, "quantity")
+    if entry_price <= 0 or quantity <= 0:
+        return None, {"symbol": symbol, "action": "hold", "reason": "invalid_position"}
+
+    direction = Decimal("1") if side == "LONG" else Decimal("-1")
+    move_pct = ((price - entry_price) / entry_price * Decimal("100") * direction).quantize(Decimal("0.0001"))
+    take_profit = parse_decimal(settings.get("take_profit_underlying_pct", 1.6), "take_profit_underlying_pct")
+    stop_loss = parse_decimal(settings.get("stop_loss_underlying_pct", 1.2), "stop_loss_underlying_pct")
+    reason = ""
+    if move_pct >= take_profit:
+        reason = "take_profit"
+    elif move_pct <= -stop_loss:
+        reason = "stop_loss"
+    else:
+        gap = Decimal(str(settings.get("reversal_exit_score_gap", 28)))
+        if side == "LONG" and candidate.get("action") == "SHORT":
+            if Decimal(str(candidate.get("short_score", 0))) - Decimal(str(candidate.get("long_score", 0))) >= gap:
+                reason = "short_reversal"
+        if side == "SHORT" and candidate.get("action") == "LONG":
+            if Decimal(str(candidate.get("long_score", 0))) - Decimal(str(candidate.get("short_score", 0))) >= gap:
+                reason = "long_reversal"
+
+    decision = {
+        "symbol": symbol,
+        "side": side,
+        "action": "close" if reason else "hold",
+        "reason": reason or "in_range",
+        "move_pct": float(move_pct),
+        "take_profit_pct": float(take_profit),
+        "stop_loss_pct": float(stop_loss),
+    }
+    if not reason:
+        return None, decision
+    return close_futures_position(state, symbol, raw, price, settings, now, reason), decision
+
+
+def futures_paper_entries(
+    state: dict[str, Any],
+    prices: dict[tuple[str, str], Decimal],
+    candidates: list[dict[str, Any]],
+    settings: dict[str, Any],
+    now: datetime,
+) -> list[dict[str, Any]]:
+    max_positions = int(settings.get("max_positions", 2))
+    open_symbols = active_futures_symbols(state)
+    slots = max(max_positions - len(open_symbols), 0)
+    if slots <= 0:
+        return []
+
+    min_score = float(settings.get("min_signal_score", 48))
+    selected = [row for row in candidates if row["symbol"] not in open_symbols and row["action"] in {"LONG", "SHORT"} and row["score"] >= min_score]
+    if not selected and bool(settings.get("force_seed_entry", False)):
+        fallback = [
+            {**row, "action": "SHORT" if row["short_score"] > row["long_score"] and settings.get("allow_short", True) else "LONG"}
+            for row in candidates
+            if row["symbol"] not in open_symbols
+        ]
+        selected = [row for row in fallback if max(row["long_score"], row["short_score"]) >= 35]
+
+    decisions: list[dict[str, Any]] = []
+    for candidate in selected[:slots]:
+        price = prices.get(("binance_futures", candidate["symbol"]))
+        if price is None:
+            decisions.append({"symbol": candidate["symbol"], "action": "skip", "reason": "price_unavailable"})
+            continue
+        order = open_futures_position(state, candidate, price, prices, settings, now)
+        if order is None:
+            decisions.append({"symbol": candidate["symbol"], "action": "skip", "reason": "cash_or_margin_limit"})
+            continue
+        decisions.append(
+            {
+                "symbol": candidate["symbol"],
+                "action": "open",
+                "side": candidate["action"],
+                "score": candidate["score"],
+                "reason": candidate.get("reason", ""),
+                "order": order,
+            }
+        )
+    return decisions
+
+
+def open_futures_position(
+    state: dict[str, Any],
+    candidate: dict[str, Any],
+    price: Decimal,
+    prices: dict[tuple[str, str], Decimal],
+    settings: dict[str, Any],
+    now: datetime,
+) -> SimulatedOrder | None:
+    symbol = str(candidate["symbol"])
+    side = str(candidate["action"]).upper()
+    if side not in {"LONG", "SHORT"}:
+        return None
+    cash_key = cash_state_key("binance_futures", "USDT")
+    portfolio = state.setdefault("portfolio", {})
+    cash = portfolio.setdefault("cash", {})
+    positions = portfolio.setdefault("positions", {})
+    cash_before = parse_decimal(cash.get(cash_key, "0"), cash_key, allow_zero=True)
+    total_equity = futures_account_equity(state, prices)
+    total_margin = active_futures_margin(state)
+    margin_cap = total_equity * Decimal(str(settings.get("max_total_margin_pct", 70))) / Decimal("100")
+    available_margin_cap = max(margin_cap - total_margin, Decimal("0"))
+    requested_margin = total_equity * Decimal(str(settings.get("margin_per_trade_pct", 30))) / Decimal("100")
+    leverage = min(
+        max(Decimal(str(settings.get("leverage", 3))), Decimal("1")),
+        Decimal(str(settings.get("max_leverage", 5))),
+    )
+    fee_rate = Decimal(str(settings.get("fee_rate", "0.0004")))
+    slippage_pct = Decimal(str(settings.get("slippage_pct", "0.0005")))
+    margin = min(requested_margin, available_margin_cap, cash_before / (Decimal("1") + leverage * fee_rate))
+    margin = margin.quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+    min_margin = Decimal(str(settings.get("min_margin_usdt", 15)))
+    if margin < min_margin:
+        return None
+
+    notional = (margin * leverage).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+    if side == "LONG":
+        effective_price = price * (Decimal("1") + slippage_pct)
+        trade_side = "buy"
+    else:
+        effective_price = price * (Decimal("1") - slippage_pct)
+        trade_side = "sell"
+    quantity = (notional / effective_price).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+    if quantity <= 0:
+        return None
+    fee = (notional * fee_rate).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+    cash_after = cash_before - margin - fee
+    if cash_after < 0:
+        return None
+
+    position_key = position_state_key("binance_futures", symbol)
+    positions[position_key] = {
+        "quantity": format_decimal(quantity),
+        "cost_basis": format_decimal(margin),
+        "margin": format_decimal(margin),
+        "entry_price": format_decimal(effective_price),
+        "side": side,
+        "leverage": format_decimal(leverage),
+        "realized_pnl": "0",
+        "opened_at": now.isoformat(timespec="seconds"),
+        "strategy": "futures_leverage_paper",
+    }
+    cash[cash_key] = format_decimal(cash_after)
+    return SimulatedOrder(
+        timestamp=now.isoformat(timespec="seconds"),
+        strategy="futures_leverage_paper",
+        exchange="binance_futures",
+        instrument=symbol,
+        side=trade_side,
+        quote_currency="USDT",
+        requested_quote_budget=margin,
+        executed_quote_value=notional,
+        fee=fee,
+        slippage_pct=slippage_pct,
+        price=price,
+        effective_price=effective_price,
+        base_quantity=quantity,
+        cash_after=cash_after,
+        position_after=quantity,
+        realized_pnl=Decimal("0"),
+        dry_run=True,
+        status="simulated",
+        note=f"paper futures {side} open; no real order sent",
+    )
+
+
+def close_futures_position(
+    state: dict[str, Any],
+    symbol: str,
+    raw: dict[str, Any],
+    price: Decimal,
+    settings: dict[str, Any],
+    now: datetime,
+    reason: str,
+) -> SimulatedOrder:
+    side = str(raw.get("side", "LONG")).upper()
+    quantity = decimal_from_mapping(raw, "quantity")
+    margin = decimal_from_mapping(raw, "margin")
+    entry_price = decimal_from_mapping(raw, "entry_price")
+    fee_rate = Decimal(str(settings.get("fee_rate", "0.0004")))
+    slippage_pct = Decimal(str(settings.get("slippage_pct", "0.0005")))
+    if side == "LONG":
+        effective_price = price * (Decimal("1") - slippage_pct)
+        pnl = (effective_price - entry_price) * quantity
+        trade_side = "sell"
+    else:
+        effective_price = price * (Decimal("1") + slippage_pct)
+        pnl = (entry_price - effective_price) * quantity
+        trade_side = "buy"
+    notional = (quantity * effective_price).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+    fee = (notional * fee_rate).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+    realized_pnl = (pnl - fee).quantize(Decimal("0.00000001"), rounding=ROUND_DOWN)
+    cash_key = cash_state_key("binance_futures", "USDT")
+    cash = state.setdefault("portfolio", {}).setdefault("cash", {})
+    cash_before = parse_decimal(cash.get(cash_key, "0"), cash_key, allow_zero=True)
+    cash_after = cash_before + margin + realized_pnl
+    cash[cash_key] = format_decimal(cash_after)
+    positions = state.setdefault("portfolio", {}).setdefault("positions", {})
+    positions.pop(position_state_key("binance_futures", symbol), None)
+    realized_book = state.setdefault("portfolio", {}).setdefault("realized_pnl", {})
+    realized_key = cash_state_key("binance_futures", "USDT")
+    previous_realized = Decimal(str(realized_book.get(realized_key, "0") or "0"))
+    realized_book[realized_key] = format_decimal(previous_realized + realized_pnl)
+    return SimulatedOrder(
+        timestamp=now.isoformat(timespec="seconds"),
+        strategy="futures_leverage_paper",
+        exchange="binance_futures",
+        instrument=symbol,
+        side=trade_side,
+        quote_currency="USDT",
+        requested_quote_budget=margin,
+        executed_quote_value=notional,
+        fee=fee,
+        slippage_pct=slippage_pct,
+        price=price,
+        effective_price=effective_price,
+        base_quantity=quantity,
+        cash_after=cash_after,
+        position_after=Decimal("0"),
+        realized_pnl=realized_pnl,
+        dry_run=True,
+        status="simulated",
+        note=f"paper futures {side} close: {reason}; no real order sent",
+    )
+
+
+def active_futures_symbols(state: dict[str, Any]) -> set[str]:
+    symbols = set()
+    for key, raw in state.get("portfolio", {}).get("positions", {}).items():
+        exchange, symbol = key.split(":", 1)
+        if exchange == "binance_futures" and decimal_from_mapping(raw, "quantity") > 0:
+            symbols.add(symbol)
+    return symbols
+
+
+def active_futures_margin(state: dict[str, Any]) -> Decimal:
+    total = Decimal("0")
+    for key, raw in state.get("portfolio", {}).get("positions", {}).items():
+        exchange, _symbol = key.split(":", 1)
+        if exchange == "binance_futures" and decimal_from_mapping(raw, "quantity") > 0:
+            total += decimal_from_mapping(raw, "margin")
+    return total
+
+
+def futures_account_equity(
+    state: dict[str, Any],
+    prices: dict[tuple[str, str], Decimal],
+) -> Decimal:
+    cash_key = cash_state_key("binance_futures", "USDT")
+    cash = Decimal(str(state.get("portfolio", {}).get("cash", {}).get(cash_key, "0") or "0"))
+    total = cash
+    for key, raw in state.get("portfolio", {}).get("positions", {}).items():
+        exchange, symbol = key.split(":", 1)
+        if exchange != "binance_futures":
+            continue
+        quantity = decimal_from_mapping(raw, "quantity")
+        price = prices.get(("binance_futures", symbol))
+        entry_price = decimal_from_mapping(raw, "entry_price")
+        margin = decimal_from_mapping(raw, "margin")
+        if quantity <= 0 or price is None or entry_price <= 0:
+            continue
+        if str(raw.get("side", "LONG")).upper() == "SHORT":
+            unrealized = (entry_price - price) * quantity
+        else:
+            unrealized = (price - entry_price) * quantity
+        total += margin + unrealized
+    return total
+
+
 def chart_entry_orders(
     config: dict[str, Any],
     state: dict[str, Any],
@@ -1336,7 +1902,9 @@ def order_row(order: Any) -> dict[str, Any]:
         "exchange": order.exchange,
         "instrument": order.instrument,
         "side": order.side,
+        "quote_currency": order.quote_currency,
         "value": float(order.executed_quote_value),
+        "fee": float(order.fee),
         "price": float(order.effective_price),
         "quantity": float(order.base_quantity),
         "status": order.status,
@@ -1347,11 +1915,13 @@ def order_row(order: Any) -> dict[str, Any]:
 def prices_for_portfolio(config: dict[str, Any], state: dict[str, Any]) -> dict[tuple[str, str], Decimal]:
     pseudo_orders = []
     for item in ASSETS:
-        for exchange in ("upbit", "binance"):
+        for exchange in ("upbit", "binance", "binance_futures"):
+            if exchange not in config.get("exchanges", {}):
+                continue
             pseudo_orders.append(
                 PlannedOrder(
                     exchange=exchange,
-                    instrument=item[exchange],
+                    instrument=item["binance"] if exchange == "binance_futures" else item[exchange],
                     side="buy",
                     quote_currency=config["exchanges"][exchange]["quote_currency"],
                     quote_budget=Decimal("1"),
@@ -1387,10 +1957,11 @@ def portfolio_payload(
     equity_rows: list[dict[str, str]],
 ) -> dict[str, Any]:
     positions = []
+    realized_by_book = state.get("portfolio", {}).get("realized_pnl", {})
     total_cost_basis = 0.0
     total_position_value = 0.0
     total_unrealized_pnl = 0.0
-    total_realized_pnl = 0.0
+    total_realized_pnl = sum(float(value or 0) for value in realized_by_book.values())
     for key, raw in state.get("portfolio", {}).get("positions", {}).items():
         exchange, instrument = key.split(":", 1)
         total_realized_pnl += float(raw.get("realized_pnl", 0) or 0)
@@ -1398,9 +1969,28 @@ def portfolio_payload(
         if quantity <= 0:
             continue
         price = float(prices.get((exchange, instrument), Decimal("0")))
-        cost = float(raw.get("cost_basis", 0))
-        value = quantity * price
-        unrealized_pnl = value - cost
+        if exchange == "binance_futures":
+            cost = float(raw.get("margin", raw.get("cost_basis", 0)) or 0)
+            entry_price = float(raw.get("entry_price", 0) or 0)
+            side = str(raw.get("side", "LONG")).upper()
+            leverage = float(raw.get("leverage", 1) or 1)
+            notional = quantity * price
+            if side == "SHORT":
+                unrealized_pnl = (entry_price - price) * quantity
+            else:
+                unrealized_pnl = (price - entry_price) * quantity
+            value = cost + unrealized_pnl
+            average_price = entry_price
+            quote_currency = "USDT"
+        else:
+            cost = float(raw.get("cost_basis", 0))
+            value = quantity * price
+            unrealized_pnl = value - cost
+            notional = value
+            average_price = cost / quantity if quantity else 0
+            leverage = 1.0
+            side = "SPOT"
+            quote_currency = "KRW" if exchange == "upbit" else "USDT"
         total_cost_basis += cost
         total_position_value += value
         total_unrealized_pnl += unrealized_pnl
@@ -1408,13 +1998,18 @@ def portfolio_payload(
             {
                 "exchange": exchange,
                 "instrument": instrument,
+                "quote_currency": quote_currency,
                 "quantity": quantity,
                 "cost_basis": cost,
-                "average_price": cost / quantity if quantity else 0,
+                "average_price": average_price,
                 "current_price": price,
                 "value": value,
+                "notional": notional,
                 "unrealized_pnl": unrealized_pnl,
                 "realized_pnl": float(raw.get("realized_pnl", 0)),
+                "side": side,
+                "leverage": leverage,
+                "margin": cost if exchange == "binance_futures" else 0,
             }
         )
     return {
