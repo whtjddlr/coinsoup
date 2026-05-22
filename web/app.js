@@ -1127,25 +1127,25 @@ function renderTrades(trades) {
 function renderTradeSummary(trades, root) {
   if (!root) return;
   const simulated = trades.filter((trade) => trade.status === "simulated");
-  const buys = simulated.filter((trade) => trade.side === "buy");
-  const sells = simulated.filter((trade) => trade.side === "sell");
-  const realized = sells.reduce((sum, trade) => sum + Number(trade.realized_pnl || 0), 0);
+  const buys = simulated.filter((trade) => trade.side === "buy" || isFuturesLongOpen(trade));
+  const sells = simulated.filter((trade) => trade.side === "sell" || isFuturesShortOpen(trade));
+  const realized = simulated.reduce((sum, trade) => sum + Number(trade.realized_pnl || 0), 0);
   const feeSummary = tradeFeeSummary(simulated);
   root.innerHTML = `
     <div class="trade-summary-card buy">
-      <span>가상 매수</span>
+      <span>롱/매수</span>
       <strong>${tradeAmountSummary(buys, "executed_quote_value")}</strong>
       <b>${buys.length}건</b>
     </div>
     <div class="trade-summary-card sell">
-      <span>가상 매도</span>
+      <span>숏/매도</span>
       <strong>${tradeAmountSummary(sells, "executed_quote_value")}</strong>
       <b>${sells.length}건</b>
     </div>
     <div class="trade-summary-card ${realized >= 0 ? "positive-card" : "negative-card"}">
       <span>확정 손익</span>
-      <strong>${tradeAmountSummary(sells, "realized_pnl", true)}</strong>
-      <b>${sells.length ? "실현손익" : "매도 없음"}</b>
+      <strong>${tradeAmountSummary(simulated, "realized_pnl", true)}</strong>
+      <b>${realized ? "청산 완료" : "청산 없음"}</b>
     </div>
     <div class="trade-summary-card muted-card">
       <span>수수료</span>
@@ -1237,6 +1237,18 @@ function formatFeeAmount(value, currency = "KRW") {
 function tradeSideClass(trade) {
   if (trade.status === "skipped") return "muted";
   return trade.side === "sell" ? "sell" : "buy";
+}
+
+function isFuturesTrade(trade) {
+  return trade?.exchange === "binance_futures" || String(trade?.note || "").includes("paper futures");
+}
+
+function isFuturesLongOpen(trade) {
+  return isFuturesTrade(trade) && String(trade?.note || "").includes("paper futures LONG open");
+}
+
+function isFuturesShortOpen(trade) {
+  return isFuturesTrade(trade) && String(trade?.note || "").includes("paper futures SHORT open");
 }
 
 function tradeStatusClass(status) {
@@ -2350,6 +2362,19 @@ function translateSide(side) {
 }
 
 function translateTradeSide(trade) {
+  if (isFuturesTrade(trade)) {
+    const note = String(trade?.note || "");
+    const match = note.match(/paper futures (LONG|SHORT) (open|close)/);
+    const futuresSide = match?.[1] || (trade?.side === "sell" ? "SHORT" : "LONG");
+    const action = match?.[2] || "open";
+    if (trade?.status === "skipped") {
+      return futuresSide === "SHORT" ? "숏 안함" : "롱 안함";
+    }
+    if (action === "close") {
+      return futuresSide === "SHORT" ? "숏 청산" : "롱 청산";
+    }
+    return futuresSide === "SHORT" ? "숏 진입" : "롱 진입";
+  }
   if (trade?.status === "skipped") {
     return trade.side === "sell" ? "매도 안함" : "매수 안함";
   }
@@ -2404,6 +2429,10 @@ function translatePositionMode(mode = "") {
 }
 
 function translateNote(note = "") {
+  if (note.includes("paper futures SHORT open")) return "숏 진입 · 실주문 없음";
+  if (note.includes("paper futures LONG open")) return "롱 진입 · 실주문 없음";
+  if (note.includes("paper futures SHORT close")) return `숏 청산 · ${translateExitReason(note)}`;
+  if (note.includes("paper futures LONG close")) return `롱 청산 · ${translateExitReason(note)}`;
   if (note.includes("paper buy")) return "가상 매수";
   if (note.includes("paper sell")) return "가상 매도";
   if (note.includes("no real order")) return "실주문 없음";
@@ -2415,4 +2444,11 @@ function translateNote(note = "") {
   if (note.includes("price unavailable")) return "가격 없음";
   if (note.includes("insufficient")) return "잔고 부족";
   return note;
+}
+
+function translateExitReason(note = "") {
+  if (note.includes("take_profit")) return "익절";
+  if (note.includes("stop_loss")) return "손절";
+  if (note.includes("reversal")) return "반대 신호";
+  return "실주문 없음";
 }
