@@ -429,7 +429,10 @@ function renderDecision(asset) {
   document.getElementById("checkList").innerHTML = checks.map((check) => `
     <div class="check ${check.state}">
       <span class="check-icon">${check.state === "pass" ? "✓" : check.state === "fail" ? "×" : "!"}</span>
-      <span>${check.label}</span>
+      <span class="check-copy">
+        <b>${check.label}</b>
+        ${check.detail ? `<small>${check.detail}</small>` : ""}
+      </span>
       <span class="status-tag">${check.tag}</span>
     </div>
   `).join("");
@@ -501,53 +504,53 @@ function updateOrderFormForVenue() {
 
 function buildChecks(asset) {
   const regime = state.dashboard.market_regime.name;
-  const trendPass = Number(asset.current_price) > Number(asset.ema100) && Number(asset.ema20) > Number(asset.ema50);
-  const rsPass = asset.asset === "BTC" || Number(asset.relative_strength_vs_btc) > 0;
+  const supportDistance = Number(asset.support_distance_pct || 0);
+  const resistanceDistance = Number(asset.resistance_distance_pct || 0);
+  const volumeRatio = Number(asset.volume_ratio || 0);
+  const rsi = Number(asset.rsi || 0);
+  const kimchi = Number(asset.kimchi_premium_pct || 0);
+  const marketState = regime === "bull" ? "pass" : regime === "neutral" ? "caution" : "fail";
+  const marketTag = regime === "bull" ? "좋음" : regime === "neutral" ? "보통" : "불리";
+  const signalState = asset.signal === "buy" ? "pass" : asset.signal === "watch" ? "caution" : "fail";
+  const signalTag = asset.signal === "buy" ? "매수 후보" : asset.signal === "watch" ? "기다림" : "보류";
+  const priceState = supportDistance <= 1.2 && resistanceDistance >= 0.5
+    ? "pass"
+    : supportDistance <= 2.2 && resistanceDistance >= 0.2 ? "caution" : "fail";
+  const priceTag = priceState === "pass" ? "괜찮음" : priceState === "caution" ? "애매" : "불리";
+  const volumeState = volumeRatio >= 1 ? "pass" : volumeRatio >= 0.5 ? "caution" : "fail";
+  const overheatState = rsi >= 72 || Math.abs(kimchi) >= 4
+    ? "fail"
+    : rsi >= 65 || Math.abs(kimchi) >= 2 ? "caution" : "pass";
   return [
     {
-      label: "BTC 시장 국면",
-      state: regime === "bull" ? "pass" : regime === "neutral" ? "caution" : "fail",
-      tag: regimeLabels[regime] || regime,
+      label: "전체 시장 분위기",
+      detail: "BTC 기준으로 지금 시장이 매수하기 편한지 봅니다.",
+      state: marketState,
+      tag: marketTag,
     },
     {
-      label: "전략 모드",
-      state: asset.signal === "buy" ? "pass" : asset.signal === "watch" ? "caution" : "fail",
-      tag: asset.strategy_mode || asset.signal,
+      label: "자동 판단",
+      detail: "현재 규칙이 바로 살지, 더 기다릴지 정한 결과입니다.",
+      state: signalState,
+      tag: signalTag,
     },
     {
-      label: asset.asset_role === "core" ? "코어 DCA 배율" : "공격 추세 필터",
-      state: asset.asset_role === "core" ? (asset.order_budget_multiplier > 0 ? "pass" : "fail") : (trendPass ? "pass" : "fail"),
-      tag: asset.asset_role === "core" ? `${Math.round(Number(asset.order_budget_multiplier || 0) * 100)}%` : "EMA100/20/50",
+      label: "가격 위치",
+      detail: `지지선까지 ${supportDistance.toFixed(2)}%, 저항선까지 ${resistanceDistance.toFixed(2)}% 남았습니다.`,
+      state: priceState,
+      tag: priceTag,
     },
     {
-      label: "BTC 대비 상대강도",
-      state: rsPass ? "pass" : "fail",
-      tag: asset.asset === "BTC" ? "기준" : asset.relative_strength_vs_btc,
+      label: "거래 힘",
+      detail: `최근 거래량이 평소의 ${volumeRatio.toFixed(2)}배입니다.`,
+      state: volumeState,
+      tag: volumeState === "pass" ? "충분" : volumeState === "caution" ? "약함" : "많이 약함",
     },
     {
-      label: "지지선 근처 여부",
-      state: asset.support_distance_pct <= 1.2 ? "pass" : asset.support_distance_pct <= 2.2 ? "caution" : "fail",
-      tag: `${asset.support_distance_pct}%`,
-    },
-    {
-      label: "저항선까지 여유",
-      state: asset.resistance_distance_pct >= 1.5 ? "pass" : "caution",
-      tag: `${asset.resistance_distance_pct}%`,
-    },
-    {
-      label: "RSI 조건",
-      state: asset.rsi >= 38 && asset.rsi <= 60 ? "pass" : asset.rsi <= 70 ? "caution" : "fail",
-      tag: asset.rsi,
-    },
-    {
-      label: "거래량 조건",
-      state: asset.volume_ratio >= 1 ? "pass" : "caution",
-      tag: `${asset.volume_ratio}x`,
-    },
-    {
-      label: "김프 과열 여부",
-      state: Math.abs(asset.kimchi_premium_pct) <= 2 ? "pass" : Math.abs(asset.kimchi_premium_pct) <= 4 ? "caution" : "fail",
-      tag: formatPct(asset.kimchi_premium_pct),
+      label: "무리해서 사는 자리인지",
+      detail: `과열도 ${rsi.toFixed(1)}, 김프 ${formatPct(kimchi)} 기준입니다.`,
+      state: overheatState,
+      tag: overheatState === "pass" ? "낮음" : overheatState === "caution" ? "주의" : "높음",
     },
   ];
 }

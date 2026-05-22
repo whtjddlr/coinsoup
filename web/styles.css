@@ -1258,7 +1258,7 @@ h1 {
 .check {
   display: grid;
   grid-template-columns: 18px 1fr auto;
-  align-items: center;
+  align-items: start;
   gap: 8px;
   color: var(--muted);
   font-size: 13px;
@@ -1272,6 +1272,7 @@ h1 {
   border-radius: 50%;
   font-size: 11px;
   font-weight: 900;
+  margin-top: 1px;
 }
 
 .check.pass .check-icon {
@@ -1287,6 +1288,24 @@ h1 {
 .check.caution .check-icon {
   color: #fcd34d;
   background: rgba(245, 158, 11, 0.2);
+}
+
+.check-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.check-copy b {
+  color: #e5e7eb;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.check-copy small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .status-tag {
