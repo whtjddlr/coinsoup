@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Local runtime data
+data/
+
+# Logs and process files
+*.log
+*.pid
+*.tmp
+
+# Local environment files
+.env
+.env.*
+
+# Editor and OS files
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini

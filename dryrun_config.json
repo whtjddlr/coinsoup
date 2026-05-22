@@ -1,0 +1,214 @@
+{
+  "dry_run": true,
+  "execution": {
+    "mode": "paper",
+    "live_trading": false
+  },
+  "strategy": {
+    "name": "rgca_l_neutral",
+    "timezone": "Asia/Seoul",
+    "dedupe_per_day": true,
+    "deployment_stage": "dry-run",
+    "profile": "neutral",
+    "books": {
+      "mode": "separated",
+      "description": "Upbit-KRW paper book + Binance public market data",
+      "venue_allocation_pct": {
+        "upbit_krw": 100,
+        "binance_usdt": 0
+      },
+      "auto_transfer_between_exchanges": false,
+      "rebalance_with_new_cash_first": true
+    },
+    "allocations": {
+      "spot_pct": 88,
+      "reserve_pct": 8,
+      "futures_collateral_cap_pct": 4,
+      "futures_notional_cap_pct": 8,
+      "core_attack_split": "80/20",
+      "spot_targets_pct": {
+        "BTC": 50,
+        "ETH": 30,
+        "XRP": 10,
+        "SOL": 10
+      },
+      "asset_max_weight_pct": {
+        "BTC": 50,
+        "ETH": 30,
+        "XRP": 15,
+        "SOL": 15
+      }
+    },
+    "rebalancing": {
+      "schedule": "biweekly",
+      "drift_threshold_pct_points": 5,
+      "monthly_cross_exchange_review": true,
+      "cross_exchange_drift_threshold_pct_points": 10,
+      "run_time_kst": "09:15"
+    },
+    "risk_limits": {
+      "daily_loss_limit_pct": 2,
+      "rolling_7d_loss_limit_pct": 6,
+      "attack_sleeve_abs_cap_pct": 30,
+      "risk_budget_core_add_pct": 0.25,
+      "risk_budget_attack_entry_pct": 0.5,
+      "upbit_slippage_cap_bps": 20,
+      "attack_slippage_cap_bps": 40,
+      "auto_withdrawals": false,
+      "live_trading_locked": true
+    },
+    "futures_overlay": {
+      "enabled": false,
+      "dry_run_only": true,
+      "symbols": ["BTCUSDT", "ETHUSDT"],
+      "margin_type": "isolated",
+      "position_mode": "one-way",
+      "max_leverage": 2,
+      "aggressive_max_leverage": 2.5,
+      "collateral_cap_pct": 4,
+      "collateral_abs_cap_pct": 8,
+      "gross_notional_cap_pct": 8,
+      "gross_notional_abs_cap_pct": 12,
+      "max_concurrent_positions": 2,
+      "average_down": false,
+      "liquidation_warn_distance_pct": 15,
+      "liquidation_flat_distance_pct": 10,
+      "daily_futures_loss_stop_pct": 0.75
+    },
+    "execution_policy": {
+      "phase_sequence": ["shadow", "order-intent", "test/demo", "micro-live"],
+      "current_phase": "dry-run",
+      "default_order_type": "limit_split",
+      "emergency_exit_order_type": "marketable_limit",
+      "validate_symbol_filters_on_start": true,
+      "validate_min_order_before_submit": true,
+      "state_reconcile_before_retry": true,
+      "client_order_id_required": true,
+      "secret_logging": false
+    },
+    "performance": {
+      "snapshot_interval_minutes": 15,
+      "hourly_window_hours": 24,
+      "periods": ["1h", "4h", "24h", "7d", "all"],
+      "combine_quote": "KRW",
+      "binance_conversion_rate": "upbit_krw_usdt"
+    },
+    "scalp_lab": {
+      "enabled": false,
+      "zero_fee_verified": false,
+      "assumed_fee_bps": 5,
+      "max_hold_minutes": 20,
+      "position_cap_pct": 2,
+      "daily_loss_stop_pct": 0.5,
+      "timeframes": ["1m", "3m", "5m", "15m"]
+    },
+    "automation": {
+      "dashboard_refresh_minutes": 15,
+      "support_resistance_refresh_minutes": 15,
+      "major_level_refresh_hours_kst": [1, 5, 9, 13, 17, 21],
+      "major_level_delay_minutes": 5,
+      "daily_analysis_time_kst": "09:10",
+      "paper_plan_time_kst": "09:12",
+      "paper_plan_enabled": true,
+      "level_timeframes": ["5m", "15m", "1h", "4h", "1d", "1w"],
+      "venues": ["upbit", "binance", "binance_futures"],
+      "snapshot_dir": "data/snapshots",
+      "loop_poll_seconds": 30,
+      "supervisor_refresh_minutes": 5,
+      "supervisor_timeframes": ["5m", "15m", "1h", "4h", "1d", "1w"],
+      "supervisor_event_dedupe_minutes": 15,
+      "supervisor_lock_minutes": 20,
+      "supervisor_lock_on_risk_regimes": ["crash", "overheated"],
+      "bear_rebound_test_enabled": false,
+      "bear_rebound_check_minutes": 5,
+      "bear_rebound_strategy_name": "bear_rebound_aggressive_test",
+      "bear_rebound_budget_krw": "100000",
+      "bear_rebound_max_candidates": 4,
+      "chart_trade_test_enabled": true,
+      "chart_trade_check_minutes": 5,
+      "chart_trade_strategy_name": "chart_aggressive_test",
+      "chart_trade_buy_budget_krw": "100000",
+      "chart_trade_max_candidates": 4,
+      "chart_trade_asset_cap_krw": "250000",
+      "chart_trade_cash_reserve_krw": "200000",
+      "chart_trade_reentry_cooldown_minutes": 15,
+      "chart_trade_entry_support_distance_pct": 1.2,
+      "chart_trade_entry_min_score": 45,
+      "chart_trade_entry_min_resistance_room_pct": 0.2,
+      "chart_trade_take_profit_pct": "0.45",
+      "chart_trade_runner_take_profit_pct": "1.2",
+      "chart_trade_stop_loss_pct": "-1.0",
+      "chart_trade_hard_stop_loss_pct": "-2.0",
+      "chart_trade_partial_sell_fraction": "0.5",
+      "supervisor_status_path": "data/codex_supervisor_status.json",
+      "supervisor_log_path": "data/codex_supervisor.log",
+      "trigger_events_path": "data/trigger_events.jsonl",
+      "trigger_state_path": "data/trigger_state.json",
+      "no_entry_lock_path": "data/no_entry_lock.json"
+    }
+  },
+  "portfolio": {
+    "starting_cash": {
+      "upbit:KRW": "1000000",
+      "binance:USDT": "0"
+    },
+    "starting_positions": {},
+    "fee_rate": {
+      "upbit": "0.0005",
+      "binance": "0.001"
+    },
+    "slippage_pct": {
+      "upbit": "0.0005",
+      "binance": "0.0005"
+    }
+  },
+  "exchanges": {
+    "upbit": {
+      "enabled": true,
+      "base_url": "https://api.upbit.com",
+      "quote_currency": "KRW",
+      "default_min_quote_budget": "5000",
+      "max_quote_budget_per_run": "20000",
+      "orders": [
+        {
+          "market": "KRW-BTC",
+          "side": "buy",
+          "quote_budget": "10000",
+          "min_quote_budget": "5000"
+        },
+        {
+          "market": "KRW-ETH",
+          "side": "buy",
+          "quote_budget": "10000",
+          "min_quote_budget": "5000"
+        }
+      ]
+    },
+    "binance": {
+      "enabled": false,
+      "base_url": "https://data-api.binance.vision",
+      "quote_currency": "USDT",
+      "default_min_quote_budget": "5",
+      "max_quote_budget_per_run": "20",
+      "orders": [
+        {
+          "symbol": "BTCUSDT",
+          "side": "buy",
+          "quote_budget": "10",
+          "min_quote_budget": "5"
+        },
+        {
+          "symbol": "ETHUSDT",
+          "side": "buy",
+          "quote_budget": "10",
+          "min_quote_budget": "5"
+        }
+      ]
+    }
+  },
+  "output": {
+    "trades_csv": "data/paper_trades.csv",
+    "equity_csv": "data/paper_equity.csv",
+    "state_json": "data/dryrun_state.json"
+  }
+}

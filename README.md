@@ -1,0 +1,250 @@
+# Binance + Upbit Paper Trading Supervisor
+
+Binance public market data와 Upbit KRW 가격 데이터를 사용해서 BTC, ETH, XRP, SOL을 가상으로 매매하는 로컬 TEST MODE 프로젝트입니다.
+
+이 프로젝트는 **실거래 봇이 아닙니다.** API 키를 읽지 않고, 실제 주문/출금/레버리지 주문을 전송하는 코드도 없습니다. 현재 목적은 차트 기반 모의투자와 Codex 관리감독 로직을 검증하는 것입니다.
+
+## 핵심 기능
+
+- 로컬 대시보드: 포트폴리오, 손익, 신호, 지지/저항, 최근 가상 주문 확인
+- Binance 기반 멀티타임프레임 감독: `5m`, `15m`, `1h`, `4h`, `1d`, `1w`
+- Upbit KRW 기준 가상 포트폴리오: 시작 시드 1,000,000 KRW
+- 차트 기반 공격형 TEST 매매: 지지선 반등, 돌파, 저항선 거리, RSI, 거래량 확인
+- 가상 익절/손절 관리: 부분 익절, 수익 보호, 방어청산
+- Codex 자동화 감독: 주기적으로 로그/손익/위험/신호 품질 요약
+
+## 안전 제한
+
+반드시 아래 상태를 유지해야 합니다.
+
+- `dry_run`: `true`
+- `execution.mode`: `paper`
+- `execution.live_trading`: `false`
+- API 키 생성/수정 금지
+- 실제 주문 금지
+- 출금 기능 금지
+- 레버리지 실주문 금지
+
+실거래를 붙일 경우에는 이 프로젝트에 바로 섞지 말고, 별도 executor와 명시적인 승인 플로우를 만들어야 합니다.
+
+## 프로젝트 구조
+
+```text
+.
+├─ paper_app.py              # 로컬 대시보드 서버와 차트 기반 가상매매 로직
+├─ automation_runner.py      # 주기 실행, 감독 스냅샷, 자동화 루프
+├─ dryrun_bot.py             # 가상 주문 체결, 포트폴리오 상태, 손익 기록
+├─ dryrun_config.json        # 전략/리스크/자동화 설정
+├─ web/
+│  ├─ index.html
+│  ├─ app.js
+│  └─ styles.css
+├─ scripts/
+│  ├─ start_dashboard.ps1
+│  ├─ run_automation_once.ps1
+│  ├─ run_automation_loop.ps1
+│  ├─ install_windows_tasks.ps1
+│  └─ uninstall_windows_tasks.ps1
+└─ data/                     # 실행 중 생성되는 로그/스냅샷/가상계좌 상태
+```
+
+`data/`는 실행 결과물이므로 GitHub에는 올리지 않는 것을 기본으로 합니다.
+
+## 필요 환경
+
+- Windows PowerShell
+- Python 3.11 이상
+- 인터넷 연결
+- 별도 pip 패키지 없음. 현재 코드는 Python 표준 라이브러리 중심으로 동작합니다.
+
+## 처음 실행
+
+PowerShell에서 프로젝트 폴더로 이동합니다.
+
+```powershell
+cd C:\Users\SSAFY\Desktop\binace
+```
+
+대시보드를 실행합니다.
+
+```powershell
+python .\paper_app.py --port 8788
+```
+
+브라우저에서 엽니다.
+
+```text
+http://127.0.0.1:8788
+```
+
+## 자동화 루프 실행
+
+한 번만 감독/대시보드/지지저항 스냅샷을 갱신하려면:
+
+```powershell
+python .\automation_runner.py --tasks dashboard,levels,supervisor,chart,status
+```
+
+3시간 TEST 세션을 루프로 돌리려면:
+
+```powershell
+python .\automation_runner.py --loop --tasks due --duration-minutes 180
+```
+
+PowerShell 스크립트로 실행하려면:
+
+```powershell
+.\scripts\start_dashboard.ps1 -Port 8788
+.\scripts\run_automation_loop.ps1 -Tasks due
+```
+
+스크립트 실행이 막히면 한 번만 허용합니다.
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+또는 우회 실행:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_automation_once.ps1
+```
+
+## Windows 작업 스케줄러 등록
+
+로그온 시 대시보드와 자동화 루프를 자동 시작하려면:
+
+```powershell
+.\scripts\install_windows_tasks.ps1 -Port 8788
+Start-ScheduledTask -TaskName "RGCA-L Dashboard"
+Start-ScheduledTask -TaskName "RGCA-L Automation Loop"
+```
+
+삭제:
+
+```powershell
+.\scripts\uninstall_windows_tasks.ps1
+```
+
+## 현재 차트 기반 TEST 매매 설정
+
+주요 설정 위치: `dryrun_config.json`의 `strategy.automation`
+
+```json
+{
+  "chart_trade_test_enabled": true,
+  "chart_trade_check_minutes": 5,
+  "chart_trade_strategy_name": "chart_aggressive_test",
+  "chart_trade_buy_budget_krw": "100000",
+  "chart_trade_max_candidates": 4,
+  "chart_trade_asset_cap_krw": "250000",
+  "chart_trade_cash_reserve_krw": "200000",
+  "chart_trade_reentry_cooldown_minutes": 15,
+  "chart_trade_take_profit_pct": "0.45",
+  "chart_trade_runner_take_profit_pct": "1.2",
+  "chart_trade_stop_loss_pct": "-1.0",
+  "chart_trade_hard_stop_loss_pct": "-2.0",
+  "chart_trade_partial_sell_fraction": "0.5"
+}
+```
+
+의미:
+
+- 종목당 진입 단위: 100,000 KRW
+- 종목당 최대 보유 한도: 250,000 KRW
+- 최소 현금 보유: 200,000 KRW
+- 같은 종목 재진입 쿨다운: 15분
+- +0.45% 부근부터 부분 익절 검토
+- +1.2% 이상이면 수익 보호성 부분청산
+- -1.0% 부근에서 단기 차트가 무너지면 방어청산
+- -2.0%는 강한 방어청산
+
+## 관리감독 로직
+
+자동화 루프는 `automation_runner.py`에서 관리합니다.
+
+1. 30초마다 루프가 깨어납니다.
+2. 5분마다 Binance 기준 멀티타임프레임 감독 스냅샷을 만듭니다.
+3. BTC, ETH, XRP, SOL 각각에 대해 EMA, RSI, 거래량, 지지/저항 거리, 시간봉 정렬을 계산합니다.
+4. 실거래 잠금 위반, 출금 활성화, paper mode 위반, 급락/과열 위험이 있으면 `data/no_entry_lock.json`으로 신규 진입을 막습니다.
+5. `paper_app.py`의 `handle_run_chart_trade_test()`가 차트 기반 가상 진입/청산 판단을 수행합니다.
+6. 결과는 `data/paper_trades.csv`, `data/paper_equity.csv`, `data/snapshots/last_chart_trade_result.json`에 기록됩니다.
+
+## 가상 주문 직접 실행
+
+기본 계획 실행:
+
+```powershell
+python .\dryrun_bot.py
+```
+
+가상 매수:
+
+```powershell
+python .\dryrun_bot.py --buy upbit:KRW-BTC:5000
+```
+
+가상 매도:
+
+```powershell
+python .\dryrun_bot.py --sell upbit:KRW-BTC:0.25
+```
+
+같은 날 config 기반 주문을 강제로 한 번 더 실행:
+
+```powershell
+python .\dryrun_bot.py --force
+```
+
+## 주요 출력 파일
+
+- `data/paper_trades.csv`: 가상 주문 로그
+- `data/paper_equity.csv`: 평가금액/손익 스냅샷
+- `data/dryrun_state.json`: 가상 현금, 포지션, 실현손익, 중복방지 상태
+- `data/codex_supervisor_status.json`: 최신 관리감독 상태
+- `data/no_entry_lock.json`: 신규 진입 잠금 상태
+- `data/trigger_events.jsonl`: 감독 이벤트 로그
+- `data/snapshots/last_chart_trade_result.json`: 최신 차트 매매 판단 결과
+- `data/automation_status.json`: 최신 자동화 실행 결과
+
+## 다른 컴퓨터에서 실행
+
+1. Python 3.11 이상 설치
+2. 이 저장소를 clone
+3. PowerShell에서 저장소 폴더로 이동
+4. 아래 명령 실행
+
+```powershell
+python .\paper_app.py --port 8788
+python .\automation_runner.py --loop --tasks due --duration-minutes 180
+```
+
+대시보드:
+
+```text
+http://127.0.0.1:8788
+```
+
+기존 가상계좌 상태까지 옮기려면 `data/dryrun_state.json`, `data/paper_trades.csv`, `data/paper_equity.csv`를 별도로 복사합니다. 단, 일반적인 GitHub 공유에는 이 파일들을 올리지 않는 것을 권장합니다.
+
+## GitHub 업로드 예시
+
+이미 GitHub 저장소가 있고 `gh`가 설치/로그인되어 있다면:
+
+```powershell
+git init
+git add README.md .gitignore *.py dryrun_config.json web scripts
+git commit -m "document paper trading supervisor"
+git branch -M main
+git remote add origin https://github.com/<owner>/<repo>.git
+git push -u origin main
+```
+
+GitHub CLI 설치 확인:
+
+```powershell
+gh --version
+gh auth status
+```
+
+현재 폴더를 바로 공개 저장소로 올리기 전에는 `data/`, `__pycache__/`, 로그, pid 파일이 포함되지 않았는지 반드시 확인하세요.
